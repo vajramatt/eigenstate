@@ -43,7 +43,7 @@ function drawAgents(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time 
   }
   text(ctx, `${u.agents[0].id} → ${u.agents[0].experiment}`, 15, h - 13, t.muted, 8);
 }
-function drawBranches(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): void {
+function drawBranches(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
   const history = u.history, totalHeight = h * 0.64;
   grid(ctx, w, totalHeight, t, 28);
   const root: [number, number] = [20, totalHeight * 0.5];
@@ -54,6 +54,21 @@ function drawBranches(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): vo
     line(ctx, ...root, x, y, `${t.secondary}88`); dot(ctx, x, y, t.secondary, 2);
     const end = w - 22, endY = y + (e.convergence - 0.5) * 20;
     line(ctx, x, y, end, endY, `${t.accent}99`); dot(ctx, end, endY, t.accent, 2.5);
+    // One result packet crosses each path at a different phase. This is a
+    // read-only presentation clock: it never advances branch state or PRNG.
+    const packet = (time * 0.16 + i * 0.137) % 1;
+    if (packet < 0.46) {
+      const p = packet / 0.46;
+      dot(ctx, root[0] + (x - root[0]) * p, root[1] + (y - root[1]) * p, t.warning, 1.7);
+    } else {
+      const p = (packet - 0.46) / 0.54;
+      dot(ctx, x + (end - x) * p, y + (endY - y) * p, t.accent, 2);
+    }
+    const flare = (time + i * 1.7 + u.seed % 11) % 13;
+    if (flare < 0.7) {
+      ctx.beginPath(); ctx.strokeStyle = `${t.warning}${Math.round((1 - flare / 0.7) * 190).toString(16).padStart(2, '0')}`;
+      ctx.lineWidth = 1; ctx.arc(end, endY, 3 + flare * 7, 0, Math.PI * 2); ctx.stroke();
+    }
     text(ctx, e.id.slice(4), x + 8, y - 9, t.faint, 8);
   });
   const y = totalHeight + 10;

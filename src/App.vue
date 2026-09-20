@@ -15,7 +15,7 @@ import { AmbientHum } from './audio/hum.ts';
 const runtime = new UniverseRuntime();
 const hum = new AmbientHum();
 const humOn = ref(false), humVolume = ref(35);
-const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>();
+const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>(), privacy = ref<HTMLDialogElement>();
 const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
 const prefs = ref<Preferences>({ theme: 'eigenstate', layout: 'adaptive', quiet: false });
 const theme = computed(() => getTheme(prefs.value.theme));
@@ -44,7 +44,7 @@ let visibilityQueue = Promise.resolve();
 function refresh() { universe.value = runtime.snapshot.universe; triggerRef(universe); revision.value++; now.value = Date.now(); }
 runtime.onChange = refresh;
 watch(() => Boolean(crash.value), active => {
-  if (active) { settings.value?.close(); colophon.value?.close(); help.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
+  if (active) { settings.value?.close(); colophon.value?.close(); help.value?.close(); privacy.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
   void hum.sync(!active && !runtime.paused && !document.hidden);
 });
 async function exportCollapsed() {
@@ -75,6 +75,11 @@ function backdrop(e: MouseEvent, dialog: HTMLDialogElement | undefined) {
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
 }
 function openSettings() { idle.value = false; settings.value?.showModal(); }
+async function openPrivacy() {
+  idle.value = false;
+  settings.value?.close(); colophon.value?.close(); help.value?.close();
+  await nextTick(); privacy.value?.showModal();
+}
 function activity() {
   idle.value = false; clearTimeout(hideTimer);
   if (full.value && !settings.value?.open) hideTimer = setTimeout(() => idle.value = true, 4000);
@@ -145,8 +150,8 @@ function leave() { clearInterval(interval); void hum.sync(false); void runtime.s
 function keyboard(e: KeyboardEvent) {
   if (runtime.crash) return;
   const target = e.target as HTMLElement;
-  if (colophon.value?.open || help.value?.open) {
-    if (e.key === 'q' || e.key === '~') { colophon.value?.close(); help.value?.close(); }
+  if (colophon.value?.open || help.value?.open || privacy.value?.open) {
+    if (e.key === 'q' || e.key === '~' || (privacy.value?.open && e.key.toLowerCase() === 'p')) { colophon.value?.close(); help.value?.close(); privacy.value?.close(); }
     return;
   }
   if (settings.value?.open || resetDialog.value?.open || importDialog.value?.open) return;
@@ -162,6 +167,7 @@ function keyboard(e: KeyboardEvent) {
     case 'colophon': openColophon(); break;
     case 'help': help.value?.showModal(); break;
     case 'settings': openSettings(); break;
+    case 'privacy': void openPrivacy(); break;
   }
   activity();
 }
@@ -231,7 +237,7 @@ onBeforeUnmount(() => {
 
         <section class="pane experiment-pane" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title">Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
           <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button></div>
-          <div v-if="tab === 'experiments'" id="experiment-table" role="tabpanel" class="table-wrap"><table><thead><tr><th>Reference / objective</th><th>Convergence</th><th>Agents</th></tr></thead><tbody><tr v-for="e in universe.experiments" :key="e.id"><td><button class="experiment-link" @click="selected = e.id; tab = 'source'">{{ e.id }}</button><span class="experiment-type">{{ e.kind }}</span></td><td><span class="convergence"><i :style="{ width: `${e.convergence * 100}%` }"></i></span><span class="score">{{ e.convergence.toFixed(3) }}</span></td><td>{{ e.agents.length.toString().padStart(2, '0') }}</td></tr></tbody></table></div>
+          <div v-if="tab === 'experiments'" id="experiment-table" role="tabpanel" class="table-wrap"><table><thead><tr><th>Reference / objective</th><th>Convergence</th><th>Agents</th></tr></thead><tbody><tr v-for="(e, i) in universe.experiments" :key="e.id" :class="{ 'result-signal': !prefs.quiet && !halted && i === Math.floor(universe.age / 12) % universe.experiments.length }"><td><button class="experiment-link" @click="selected = e.id; tab = 'source'">{{ e.id }}</button><span class="experiment-type">{{ e.kind }}</span></td><td><span class="convergence"><i :style="{ width: `${e.convergence * 100}%` }"></i></span><span class="score">{{ e.convergence.toFixed(3) }}</span></td><td>{{ e.agents.length.toString().padStart(2, '0') }}</td></tr></tbody></table></div>
           <div v-else id="model-source" role="tabpanel" class="source-view"><p class="source-caption">Live state specification / {{ experiment.id }}</p><pre><span class="code-comment">// synthetic model · original specification</span>
 <span class="code-keyword">experiment</span> {{ experiment.id }} {
   objective: <span class="code-string">"{{ experiment.kind }}"</span>
@@ -248,7 +254,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <footer class="app-footer"><div><button class="colophon-link" @click="openColophon" title="Colophon (~)"><span class="small-mark">◇</span> colophon <kbd>~</kbd></button><span class="synthetic-note">Screensaver · entertainment only · simulated data.</span></div><div><span class="persistence-dot" :class="{ warning: mode !== 'writer' }"></span><span>{{ mode === 'writer' ? 'Saved in this browser' : mode === 'follower' ? 'Following active tab' : mode === 'memory' ? 'Session only · export to keep' : mode === 'blocked' ? 'Saved state preserved' : 'Connecting to local state' }}</span><button @click="toggleHum" :aria-pressed="humOn" title="Ambient hum (D)">{{ humOn ? `Hum ${humStatus}` : 'Hum off' }} <kbd>D</kbd></button><button @click="help?.showModal()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button @click="setPaused" :disabled="!canPause">{{ paused ? 'Resume' : 'Pause' }} <kbd>Space</kbd></button></div></footer>
+    <footer class="app-footer"><div><button class="colophon-link" @click="openColophon" title="Colophon (~)"><span class="small-mark">◇</span> colophon <kbd>~</kbd></button><button @click="openPrivacy" title="Privacy and access (P)">Privacy &amp; access <kbd>P</kbd></button><span class="synthetic-note">Screensaver · entertainment only · simulated data.</span></div><div><span class="persistence-dot" :class="{ warning: mode !== 'writer' }"></span><span>{{ mode === 'writer' ? 'Saved in this browser' : mode === 'follower' ? 'Following active tab' : mode === 'memory' ? 'Session only · export to keep' : mode === 'blocked' ? 'Saved state preserved' : 'Connecting to local state' }}</span><button @click="toggleHum" :aria-pressed="humOn" title="Ambient hum (D)">{{ humOn ? `Hum ${humStatus}` : 'Hum off' }} <kbd>D</kbd></button><button @click="help?.showModal()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button @click="setPaused" :disabled="!canPause">{{ paused ? 'Resume' : 'Pause' }} <kbd>Space</kbd></button></div></footer>
 
     <div v-if="toast" class="toast" role="status">{{ toast }}</div>
 
@@ -266,7 +272,7 @@ onBeforeUnmount(() => {
         <details v-if="development" :open="debug" class="debug-settings" @toggle="debug = ($event.target as HTMLDetailsElement).open"><summary>Simulation controls & diagnostics</summary><div class="setting-row"><label for="speed">Simulation speed<small>For testing. Resets to 1× when you reopen.</small></label><select id="speed" :value="runtime.speed" :disabled="!canMutate" @change="runtime.setSpeed(Number(($event.target as HTMLSelectElement).value))"><option v-for="speed in [1, 10, 100, 1000]" :key="speed" :value="speed">{{ speed }}×</option></select></div><div class="button-row"><button :disabled="!canPause" @click="setPaused">{{ paused ? 'Resume simulation' : 'Pause simulation' }}</button><button :disabled="!canMutate" @click="runtime.anomaly(); notify('Anomaly triggered.')">Trigger anomaly</button><button :disabled="!canMutate" @click="runtime.previewCrash()">Preview crash (no reset)</button></div><dl class="debug-stats"><div><dt>Writer mode</dt><dd>{{ mode }}</dd></div><div><dt>Last simulation step</dt><dd>{{ runtime.stepMs.toFixed(2) }} ms</dd></div><div><dt>Checkpoint interval</dt><dd>15 seconds</dd></div><div><dt>Retained events</dt><dd>{{ universe.events.length }} / 80</dd></div><div><dt>Snapshot size</dt><dd>{{ (JSON.stringify(runtime.snapshot).length / 1024).toFixed(1) }} KB</dd></div><div><dt>Seed</dt><dd>{{ universe.seed.toString(16).toUpperCase() }}</dd></div></dl></details>
         <div class="reset-section"><div><h3>Start over</h3><p>Create a new identity, seed, and simulation age.</p></div><button class="danger-button" :disabled="!canMutate" @click="resetText = ''; resetDialog?.showModal()">Reset universe…</button></div>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
-        <p class="about-note">Eigenstate is a browser screensaver for entertainment only. All agents, logs, and metrics are simulated. It performs no real AI inference or quantum computation. No accounts, analytics, or simulation data uploads. <a href="https://crossinginto.ai/tools">A Crossing Into tool.</a></p>
+        <p class="about-note">Eigenstate is a browser screensaver for entertainment only. All agents, logs, and metrics are simulated. It performs no real AI inference or quantum computation. No accounts, analytics, or simulation data uploads. <button class="inline-link" @click="openPrivacy">See everything Eigenstate can access.</button> <a href="https://crossinginto.ai/tools">A Crossing Into tool.</a></p>
       </div>
     </dialog>
 
@@ -278,7 +284,25 @@ onBeforeUnmount(() => {
       <div class="colophon-links"><a href="https://github.com/vajramatt/eigenstate" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a><a href="https://crossinginto.ai" target="_blank" rel="noopener noreferrer">crossinginto.ai ↗</a><a href="https://hologramthoughts.com" target="_blank" rel="noopener noreferrer">hologramthoughts.com ↗</a></div>
       <p class="signature">matt williamson</p><p class="dismiss">esc / q or click outside to return</p>
     </dialog>
-    <dialog ref="help" class="confirm-dialog" aria-labelledby="keys-title" @click="backdrop($event, help)"><div class="dialog-heading compact-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button class="close-button" aria-label="Close keyboard shortcuts" @click="help?.close()">×</button></div><dl class="keys-list"><div><dt>T</dt><dd>Next theme</dd></div><div><dt>~</dt><dd>Colophon</dd></div><div><dt>D</dt><dd>Ambient hum on / off</dd></div><div><dt>F</dt><dd>Fullscreen</dd></div><div><dt>Space</dt><dd>Pause / resume simulation</dd></div><div><dt>S</dt><dd>Settings</dd></div><div><dt>? / H</dt><dd>Keyboard shortcuts</dd></div><div><dt>Esc</dt><dd>Close dialog / exit fullscreen</dd></div></dl><p>Space pauses this view, including when a toolbar button is focused. Use Enter to activate focused buttons. Shortcuts stay inactive in text fields, selectors, and dialogs. F requests browser fullscreen; some embedded browsers do not support it.</p></dialog>
+    <dialog ref="privacy" class="privacy-dialog" aria-labelledby="privacy-title" @click="backdrop($event, privacy)">
+      <header class="privacy-head"><div><span class="privacy-mark" aria-hidden="true">◈</span><p>Installed web app / access report</p><h2 id="privacy-title">What Eigenstate can touch.</h2><p class="privacy-lede">Eigenstate stays inside your browser. It installs no native helper or system extension; its code runs in the browser while the app is open.</p></div><button class="close-button" aria-label="Close privacy and access" @click="privacy?.close()">×</button></header>
+      <div class="access-status" aria-label="Current access status">
+        <div><span :class="{ live: mode === 'writer' }"></span><small>Universe storage</small><strong>{{ persistent ? 'Persistent' : mode === 'memory' ? 'Session only' : 'This browser' }}</strong></div>
+        <div><span :class="{ live: wakeHeld }"></span><small>Keep screen awake</small><strong>{{ wakeHeld ? 'Active' : wakeRequested ? 'Blocked or released' : 'Off' }}</strong></div>
+        <div><span :class="{ live: humOn && humStatus === 'playing' }"></span><small>Audio output</small><strong>{{ humOn ? humStatus : 'Off' }}</strong></div>
+      </div>
+      <div class="privacy-body">
+        <section class="mac-note"><span aria-hidden="true">!</span><div><h3>What your Mac probably blocked</h3><p><strong>Keep screen awake</strong> asks your browser to prevent display sleep while Eigenstate remains visible. Denying it is safe. Your normal display sleep settings continue to work.</p></div></section>
+        <div class="access-columns">
+          <section><h3>Used by Eigenstate</h3><dl class="access-list"><div><dt>Browser storage</dt><dd>Saves universe state, theme, and settings under this site’s address.</dd></div><div><dt>Fullscreen</dt><dd>Requested only when you choose Fullscreen or press F.</dd></div><div><dt>Audio output</dt><dd>Creates optional hum locally. It never listens or records.</dd></div><div><dt>Selected import file</dt><dd>Reads only JSON snapshot you choose in file picker.</dd></div><div><dt>Network</dt><dd>Loads app files and updates from screensaver.crossinginto.ai. External links open only when selected.</dd></div></dl></section>
+          <section class="denied-column"><h3>Never requested</h3><ul><li><span>×</span> Camera</li><li><span>×</span> Microphone</li><li><span>×</span> Location</li><li><span>×</span> Screen recording</li><li><span>×</span> Accessibility control</li><li><span>×</span> Contacts or calendars</li><li><span>×</span> Local network devices</li><li><span>×</span> Payment information</li></ul><p>Site policy blocks camera, microphone, location, and payment access at browser level.</p></section>
+        </div>
+        <section class="privacy-foot"><div><h3>Your data stays yours</h3><p>No accounts. No application analytics. No simulation-state uploads. Cloudflare may keep ordinary web-server access logs. Clearing site data removes local state; exported snapshots remain wherever you saved them.</p></div><a href="https://github.com/vajramatt/eigenstate" target="_blank" rel="noopener noreferrer">Inspect source ↗</a></section>
+      </div>
+      <p class="privacy-dismiss">Esc, P, or click outside to return</p>
+    </dialog>
+
+    <dialog ref="help" class="confirm-dialog" aria-labelledby="keys-title" @click="backdrop($event, help)"><div class="dialog-heading compact-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button class="close-button" aria-label="Close keyboard shortcuts" @click="help?.close()">×</button></div><dl class="keys-list"><div><dt>T</dt><dd>Next theme</dd></div><div><dt>~</dt><dd>Colophon</dd></div><div><dt>D</dt><dd>Ambient hum on / off</dd></div><div><dt>F</dt><dd>Fullscreen</dd></div><div><dt>Space</dt><dd>Pause / resume simulation</dd></div><div><dt>S</dt><dd>Settings</dd></div><div><dt>P</dt><dd>Privacy and access</dd></div><div><dt>? / H</dt><dd>Keyboard shortcuts</dd></div><div><dt>Esc</dt><dd>Close dialog / exit fullscreen</dd></div></dl><p>Space pauses this view, including when a toolbar button is focused. Use Enter to activate focused buttons. Shortcuts stay inactive in text fields, selectors, and dialogs. F requests browser fullscreen; some embedded browsers do not support it.</p></dialog>
 
     <dialog ref="resetDialog" class="confirm-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset this universe?</h2><p>This permanently replaces your current universe and its history. Your theme stays the same. Export a backup first if you want to keep it.</p><label>Type <strong>RESET</strong> to confirm<input v-model="resetText" autocomplete="off" spellcheck="false" aria-label="Type RESET to confirm" /></label><div class="button-row"><button @click="resetDialog?.close()">Cancel</button><button class="danger-button" :disabled="resetText !== 'RESET' || saving" @click="resetUniverse">{{ saving ? 'Resetting…' : 'Reset universe' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>
     <dialog ref="importDialog" class="confirm-dialog" aria-labelledby="import-title"><h2 id="import-title">Replace your universe?</h2><p>Importing replaces this browser’s current universe with <strong>{{ pendingImport?.universe.id.slice(0, 8).toUpperCase() }}</strong>. Elapsed time will be reconciled. Export your current universe first if you want to keep it.</p><div class="button-row"><button @click="pendingImport = undefined; importDialog?.close()">Cancel</button><button :disabled="saving" @click="confirmImport">{{ saving ? 'Importing…' : 'Replace and import' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>
