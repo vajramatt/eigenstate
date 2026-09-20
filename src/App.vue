@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
   <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, `director-${director.phase}`, { 'motion-still': prefs.quiet || halted }]">
     <CrashScreen v-if="crash" :crash="crash" :universe="universe" />
     <header class="topbar">
-      <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ 0.1</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
+      <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ 0.2</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
       <nav class="controls" aria-label="Observatory controls">
         <a class="back-link" href="https://crossinginto.ai/tools">Crossing Into <span aria-hidden="true">↗</span></a>
         <button class="shortcut-theme" title="Next theme (T)" aria-label="Next theme" @click="nextTheme">t</button><label class="theme-picker"><span class="theme-dot" aria-hidden="true"></span><span class="sr-only">Color theme</span><select aria-label="Color theme" :value="prefs.theme" @change="changeTheme"><option v-for="t in themes" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
