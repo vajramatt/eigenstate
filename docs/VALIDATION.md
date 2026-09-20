@@ -4,11 +4,11 @@ Checked locally on macOS on September 19, 2026, using Node.js 26.3.0 and the Cod
 
 ## Automated checks
 
-- `npm test`: 30 tests passed. Coverage includes seeded determinism, ten-hour reconciliation, backward clocks, entity references, normalized probabilities, all eight anomalies, bounded histories over 24 simulated years, and century-scale catch-up.
+- `npm test`: 39 tests passed. Coverage includes seeded determinism, ten-hour reconciliation, backward clocks, entity references, normalized probabilities, all eight anomalies, bounded histories over 24 simulated years, and century-scale catch-up.
 - Persistence checks cover checksum validation, version migration, atomic replacement, corrupt-state quarantine, previous-checkpoint recovery, future-version preservation, reset, import, and storage denial.
 - Runtime checks cover single-writer ownership, follower takeover, stopped and paused sessions, and reset while a checkpoint is pending.
-- `npm run build`: TypeScript checks and the production bundle passed. JavaScript is about 127 KB before compression and 47 KB gzipped; CSS is about 21 KB before compression.
-- `wrangler deploy --dry-run`: accepted the static asset configuration. No deployment was performed.
+- `npm run build`: TypeScript checks and the production bundle passed. JavaScript is about 137 KB before compression and 50 KB gzipped; CSS is about 24 KB before compression.
+- `wrangler deploy --dry-run`: accepted the static asset configuration. `wrangler deploy` published version `9b01bb3f-1528-4028-8ec6-0876f174ff21` with the custom domain attached. Public DNS resolved, and HTTPS returned 200 with the expected asset filenames and security headers. The initial local DNS lookup had not yet propagated; the HTTPS check used the public DNS address with normal certificate validation.
 - The companion Crossing Into repository built successfully and passed all 162 tests with the new tool listing.
 
 ## Browser checks
@@ -40,7 +40,7 @@ These measurements cover the simulation engine, not browser rendering, battery u
 
 ## Publication state
 
-The repository includes MIT licensing, dependency and palette notices, contributor documentation, and CI configuration. Its source repository is [vajramatt/eigenstate](https://github.com/vajramatt/eigenstate). The production Cloudflare site has not been deployed. Deploy Eigenstate before releasing the companion listing that links to screensaver.crossinginto.ai.
+The repository includes MIT licensing, dependency and palette notices, contributor documentation, and CI configuration. Its source repository is [vajramatt/eigenstate](https://github.com/vajramatt/eigenstate). The production Cloudflare site is deployed at [screensaver.crossinginto.ai](https://screensaver.crossinginto.ai). The companion listing remains a separate repository change.
 
 ## Motion and terminal update
 
@@ -49,3 +49,7 @@ Added render-only interpolation tests, including phase wrapping and simulation i
 ## Controls and audio update
 
 Verified Space pauses and resumes when a toolbar button has focus. Keyboard repeats no longer repeatedly toggle controls. Unit tests cover text-input exclusions and pausing a follower without stopping its writer. The hum now includes 55, 110.06, and 165 Hz tones with an eleven-second volume swell, defaults to 35% volume, and reports playing, paused, muted, or blocked state. The preview reported a running audio context; physical speaker output was not measured.
+
+## Simulated crash update
+
+Nine additional tests cover seeded intervals, schedule validation, bounded archives, fresh identity after reboot, safe visual previews, pause and hidden-time behavior, follower takeover, archive failure, and restoring a crashed universe. These tests use isolated IndexedDB databases. The browser preview displayed the fault screen and countdown, then returned to universe C8744716 without changing its identity. No browser warnings or errors were reported during this check.

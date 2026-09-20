@@ -65,7 +65,18 @@ export class SnapshotStore {
   }
   async reset(snapshot: Snapshot): Promise<void> {
     const encoded = await encodeSnapshot(snapshot);
-    await this.write('state', object => { object.clear(); object.put(encoded, 'current'); });
+    await this.write('state', object => { object.delete('previous'); object.delete('quarantine'); object.put(encoded, 'current'); });
+  }
+  /** Archive and reboot together; a failed transaction leaves both records intact. */
+  async collapse(previous: Snapshot, next: Snapshot): Promise<void> {
+    const archived = await encodeSnapshot(previous), current = await encodeSnapshot(next);
+    await this.write('state', object => {
+      object.put(archived, 'collapsed'); object.put(current, 'current'); object.delete('previous');
+    });
+  }
+  async loadCollapsed(): Promise<Snapshot | null> {
+    const raw = await this.read('state', 'collapsed');
+    return raw ? decodeSnapshot(raw) : null;
   }
   async loadPreferences(): Promise<Partial<Preferences>> {
     const value = await this.read('settings', 'preferences');

@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue';
 import TelemetryCanvas from './components/TelemetryCanvas.vue';
 import LiveTerminal from './components/LiveTerminal.vue';
+import CrashScreen from './components/CrashScreen.vue';
 import { UniverseRuntime } from './core/runtime.ts';
 import { shortcutFor } from './core/shortcuts.ts';
 import { compact, formatAge } from './core/simulation.ts';
@@ -29,6 +30,8 @@ const experiment = computed(() => universe.value.experiments.find(e => e.id === 
 const mode = computed(() => { void revision.value; return runtime.mode; });
 const humStatus = computed(() => { void revision.value; return hum.status; });
 const paused = computed(() => { void revision.value; return runtime.paused; });
+const crash = computed(() => { void revision.value; return runtime.crash ? { ...runtime.crash } : null; });
+const halted = computed(() => paused.value || Boolean(crash.value));
 const canPause = computed(() => { void revision.value; return runtime.canPause(); });
 const canMutate = computed(() => { void revision.value; return runtime.canMutate(); });
 const message = computed(() => { void revision.value; return runtime.message; });
@@ -40,6 +43,18 @@ let visibilityQueue = Promise.resolve();
 
 function refresh() { universe.value = runtime.snapshot.universe; triggerRef(universe); revision.value++; now.value = Date.now(); }
 runtime.onChange = refresh;
+watch(() => Boolean(crash.value), active => {
+  if (active) { settings.value?.close(); colophon.value?.close(); help.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
+  void hum.sync(!active && !runtime.paused && !document.hidden);
+});
+async function exportCollapsed() {
+  try {
+    const snapshot = await runtime.store.loadCollapsed();
+    if (!snapshot) { notify('No crashed universe archived yet.'); return; }
+    download(JSON.stringify(await encodeSnapshot(snapshot), null, 2), `eigenstate-collapsed-${snapshot.universe.id.slice(0, 8)}.json`);
+    notify('Previous universe exported. Import this file to restore it.');
+  } catch (e) { error.value = String(e); }
+}
 function notify(value: string) { toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4500); }
 async function savePrefs() {
   applyTheme(theme.value);
@@ -49,10 +64,10 @@ async function savePrefs() {
 function changeTheme(e: Event) { prefs.value.theme = (e.target as HTMLSelectElement).value; void savePrefs(); }
 function nextTheme() { prefs.value.theme = themes[(themes.findIndex(t => t.id === prefs.value.theme) + 1) % themes.length].id; void savePrefs(); notify(theme.value.name); }
 async function toggleHum() {
-  try { await hum.setEnabled(!humOn.value); humOn.value = hum.enabled; await hum.sync(!runtime.paused && !document.hidden); refresh(); notify(humOn.value ? (hum.status === 'playing' ? 'Hum playing · adjust volume in Settings.' : `Hum ${hum.status} · check Settings.`) : 'Ambient hum off'); }
+  try { await hum.setEnabled(!humOn.value); humOn.value = hum.enabled; await hum.sync(!runtime.paused && !runtime.crash && !document.hidden); refresh(); notify(humOn.value ? (hum.status === 'playing' ? 'Hum playing · adjust volume in Settings.' : `Hum ${hum.status} · check Settings.`) : 'Ambient hum off'); }
   catch { humOn.value = false; await hum.setEnabled(false); notify('Audio unavailable. Try enabling it from Settings.'); }
 }
-function setPaused() { runtime.setPaused(!runtime.paused); void hum.sync(!runtime.paused && !document.hidden); }
+function setPaused() { runtime.setPaused(!runtime.paused); void hum.sync(!runtime.paused && !runtime.crash && !document.hidden); }
 function openColophon() { idle.value = false; colophon.value?.showModal(); }
 function backdrop(e: MouseEvent, dialog: HTMLDialogElement | undefined) {
   if (!dialog || e.target !== dialog) return;
@@ -123,11 +138,12 @@ function visibility() {
   const hidden = document.hidden;
   visibilityQueue = visibilityQueue.then(async () => {
     if (hidden) { clearInterval(interval); await hum.sync(false); await runtime.suspend(); }
-    else { await runtime.resume(); startTimer(); await requestWake(); await hum.sync(!runtime.paused); activity(); refresh(); }
+    else { await runtime.resume(); startTimer(); await requestWake(); await hum.sync(!runtime.paused && !runtime.crash); activity(); refresh(); }
   }).catch(e => { error.value = String(e); });
 }
 function leave() { clearInterval(interval); void hum.sync(false); void runtime.suspend(); }
 function keyboard(e: KeyboardEvent) {
+  if (runtime.crash) return;
   const target = e.target as HTMLElement;
   if (colophon.value?.open || help.value?.open) {
     if (e.key === 'q' || e.key === '~') { colophon.value?.close(); help.value?.close(); }
@@ -175,7 +191,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, { 'motion-still': prefs.quiet || paused }]">
+  <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, { 'motion-still': prefs.quiet || halted }]">
+    <CrashScreen v-if="crash" :crash="crash" :universe="universe" />
     <header class="topbar">
       <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ 0.1</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
       <nav class="controls" aria-label="Observatory controls">
@@ -199,18 +216,18 @@ onBeforeUnmount(() => {
         <section class="pane world-pane" aria-labelledby="world-title">
           <header class="pane-heading"><h2 id="world-title"><span class="pane-marker">◈</span> World model</h2><span>LATENT STATE PROJECTION</span></header>
           <div class="world-readout"><div><span class="metric-label">Branches evaluated</span><strong>{{ compact(universe.branches.explored) }}</strong></div><div class="world-meta"><span>Confidence <b>{{ universe.branches.confidence.toFixed(6) }}</b></span><span>Divergence <b>{{ universe.branches.divergence.toFixed(6) }}</b></span></div></div>
-          <TelemetryCanvas kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
+          <TelemetryCanvas kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
           <div class="world-trace" aria-label="World model trace"><span class="terminal-prompt">❯</span><span>world.integrate</span><span>epoch={{ universe.epoch }} · vectors={{ universe.world.coordinates.length }} · coupling={{ universe.world.coupling.filter(v => v > 0).length }}/64</span><span class="trace-marker" aria-hidden="true"></span></div>
           <div class="world-bottom"><div><span>Compute allocation</span><div class="allocation-track"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div><div class="allocation-legend"><span>Inference</span><span>Quantum</span><span>Branching</span><span>Reserve</span></div></div><div class="memory-readout"><span>Agent memory</span><strong>{{ universe.resources.memory.toFixed(2) }} <small>GB</small></strong></div></div>
         </section>
 
-        <section class="pane agent-pane" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title">Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
+        <section class="pane agent-pane" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title">Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
 
-        <section class="pane quantum-pane" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title">Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
+        <section class="pane quantum-pane" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title">Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
 
-        <section class="pane inference-pane" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title">Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><span>Token throughput</span><b>{{ compact(universe.inference.throughput) }} / s</b></footer></section>
+        <section class="pane inference-pane" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title">Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><span>Token throughput</span><b>{{ compact(universe.inference.throughput) }} / s</b></footer></section>
 
-        <section class="pane branch-pane" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Experiment branch summaries with entropy and confidence history" /></section>
+        <section class="pane branch-pane" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Experiment branch summaries with entropy and confidence history" /></section>
 
         <section class="pane experiment-pane" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title">Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
           <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button></div>
@@ -227,7 +244,7 @@ onBeforeUnmount(() => {
 }</pre></div>
         </section>
 
-        <section class="pane event-pane" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode === 'blocked'" :ready="ready" /></section>
+        <section class="pane event-pane" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode === 'blocked'" :ready="ready" /></section>
       </div>
     </main>
 
@@ -244,8 +261,9 @@ onBeforeUnmount(() => {
         <label class="setting-row"><span>Ambient hum<small>Soft, locally generated sound. Off when you arrive. {{ humOn ? `Audio: ${humStatus}.` : '' }}</small></span><input type="checkbox" :checked="humOn" @change="toggleHum" /></label><label v-if="humOn" class="setting-row"><span>Hum volume <small>{{ humVolume }}%</small></span><input aria-label="Hum volume" type="range" min="0" max="100" v-model.number="humVolume" @input="hum.setVolume(humVolume / 100)" /></label>
         <label class="setting-row"><span>Keep screen awake<small>{{ wakeHeld ? 'Active while this page stays visible.' : 'Optional. Your browser may release this request.' }}</small></span><input type="checkbox" v-model="wakeRequested" @change="requestWake" /></label>
         <div class="setting-row"><label for="anomaly-rate">Anomaly frequency<small>Per hour of simulation time</small></label><select id="anomaly-rate" :value="runtime.snapshot.anomalyRate" :disabled="!canMutate" @change="runtime.snapshot.anomalyRate = Number(($event.target as HTMLSelectElement).value); runtime.checkpoint()"><option :value="0">Off</option><option :value="0.35">Rare · 0.35 / hour</option><option :value="2">Occasional · 2 / hour</option><option :value="6">Frequent · 6 / hour</option></select></div>
-        <section class="storage-settings"><h3>Your universe</h3><p>State stays in this browser on this device. Clearing site data removes it. Export a backup before moving browsers or devices.</p><div class="storage-status"><span class="persistence-dot" :class="{ warning: !persistent }"></span>{{ persistent ? 'Persistent storage granted' : storageChecked ? 'Standard browser storage' : 'Checking storage' }}<button v-if="!persistent" @click="requestPersistence">Request persistence</button></div><div class="button-row"><button @click="exportUniverse">Export universe</button><button :disabled="!canMutate" @click="fileInput?.click()">Import universe</button><input ref="fileInput" class="sr-only" type="file" accept=".json,application/json" aria-label="Import universe file" @change="readImport" /></div><button v-if="message" class="text-button" @click="runtime.store.diagnosticExport().then(text => download(text, 'eigenstate-recovery.json')).catch(e => error = String(e))">Export recovery data</button></section>
-        <details v-if="development" :open="debug" class="debug-settings" @toggle="debug = ($event.target as HTMLDetailsElement).open"><summary>Simulation controls & diagnostics</summary><div class="setting-row"><label for="speed">Simulation speed<small>For testing. Resets to 1× when you reopen.</small></label><select id="speed" :value="runtime.speed" :disabled="!canMutate" @change="runtime.setSpeed(Number(($event.target as HTMLSelectElement).value))"><option v-for="speed in [1, 10, 100, 1000]" :key="speed" :value="speed">{{ speed }}×</option></select></div><div class="button-row"><button :disabled="!canPause" @click="setPaused">{{ paused ? 'Resume simulation' : 'Pause simulation' }}</button><button :disabled="!canMutate" @click="runtime.anomaly(); notify('Anomaly triggered.')">Trigger anomaly</button></div><dl class="debug-stats"><div><dt>Writer mode</dt><dd>{{ mode }}</dd></div><div><dt>Last simulation step</dt><dd>{{ runtime.stepMs.toFixed(2) }} ms</dd></div><div><dt>Checkpoint interval</dt><dd>15 seconds</dd></div><div><dt>Retained events</dt><dd>{{ universe.events.length }} / 80</dd></div><div><dt>Snapshot size</dt><dd>{{ (JSON.stringify(runtime.snapshot).length / 1024).toFixed(1) }} KB</dd></div><div><dt>Seed</dt><dd>{{ universe.seed.toString(16).toUpperCase() }}</dd></div></dl></details>
+        <div class="setting-row"><label for="crash-frequency">Simulated universe crashes<small>Full-screen fault, then a fresh universe. Counts active viewing only.</small></label><select id="crash-frequency" :value="runtime.snapshot.crashSchedule?.frequency ?? 'rare'" :disabled="!canMutate" @change="runtime.setCrashFrequency(($event.target as HTMLSelectElement).value)"><option value="off">Off</option><option value="rare">Rare · 45–90 min</option><option value="occasional">Occasional · 10–20 min</option></select></div>
+        <section class="storage-settings"><h3>Your universe</h3><p>State stays in this browser on this device. Clearing site data removes it. Export a backup before moving browsers or devices.</p><div class="storage-status"><span class="persistence-dot" :class="{ warning: !persistent }"></span>{{ persistent ? 'Persistent storage granted' : storageChecked ? 'Standard browser storage' : 'Checking storage' }}<button v-if="!persistent" @click="requestPersistence">Request persistence</button></div><div class="button-row"><button @click="exportUniverse">Export universe</button><button @click="exportCollapsed">Export last crashed universe</button><button :disabled="!canMutate" @click="fileInput?.click()">Import universe</button><input ref="fileInput" class="sr-only" type="file" accept=".json,application/json" aria-label="Import universe file" @change="readImport" /></div><button v-if="message" class="text-button" @click="runtime.store.diagnosticExport().then(text => download(text, 'eigenstate-recovery.json')).catch(e => error = String(e))">Export recovery data</button></section>
+        <details v-if="development" :open="debug" class="debug-settings" @toggle="debug = ($event.target as HTMLDetailsElement).open"><summary>Simulation controls & diagnostics</summary><div class="setting-row"><label for="speed">Simulation speed<small>For testing. Resets to 1× when you reopen.</small></label><select id="speed" :value="runtime.speed" :disabled="!canMutate" @change="runtime.setSpeed(Number(($event.target as HTMLSelectElement).value))"><option v-for="speed in [1, 10, 100, 1000]" :key="speed" :value="speed">{{ speed }}×</option></select></div><div class="button-row"><button :disabled="!canPause" @click="setPaused">{{ paused ? 'Resume simulation' : 'Pause simulation' }}</button><button :disabled="!canMutate" @click="runtime.anomaly(); notify('Anomaly triggered.')">Trigger anomaly</button><button :disabled="!canMutate" @click="runtime.previewCrash()">Preview crash (no reset)</button></div><dl class="debug-stats"><div><dt>Writer mode</dt><dd>{{ mode }}</dd></div><div><dt>Last simulation step</dt><dd>{{ runtime.stepMs.toFixed(2) }} ms</dd></div><div><dt>Checkpoint interval</dt><dd>15 seconds</dd></div><div><dt>Retained events</dt><dd>{{ universe.events.length }} / 80</dd></div><div><dt>Snapshot size</dt><dd>{{ (JSON.stringify(runtime.snapshot).length / 1024).toFixed(1) }} KB</dd></div><div><dt>Seed</dt><dd>{{ universe.seed.toString(16).toUpperCase() }}</dd></div></dl></details>
         <div class="reset-section"><div><h3>Start over</h3><p>Create a new identity, seed, and simulation age.</p></div><button class="danger-button" :disabled="!canMutate" @click="resetText = ''; resetDialog?.showModal()">Reset universe…</button></div>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p class="about-note">Eigenstate is a browser screensaver for entertainment only. All agents, logs, and metrics are simulated. It performs no real AI inference or quantum computation. No accounts, analytics, or simulation data uploads. <a href="https://crossinginto.ai/tools">A Crossing Into tool.</a></p>

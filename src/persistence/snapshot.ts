@@ -28,6 +28,7 @@ export function validateSnapshot(value: unknown): asserts value is Snapshot {
   const unit = (v: unknown) => num(v, 0, 1);
   const str = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 160;
   const array = (v: unknown, min: number, max = min): v is unknown[] => Array.isArray(v) && v.length >= min && v.length <= max;
+  if (s.crashSchedule !== undefined) requireValue(s.crashSchedule && ['off', 'rare', 'occasional'].includes(s.crashSchedule.frequency) && num(s.crashSchedule.remaining, 0, 5400), 'crash schedule');
   requireValue(u && str(u.id) && /^[0-9a-f-]{36}$/i.test(u.id), 'universe identity');
   requireValue(num(u.seed, 0, 0xffffffff) && Number.isInteger(u.seed) && num(u.rng, 0, 0xffffffff) && Number.isInteger(u.rng), 'PRNG state');
   requireValue(num(s.savedAt, 0, 8.64e15) && num(s.anomalyRate, 0, 60) && num(u.createdAt, 0, 8.64e15) && num(u.age, 0, 1e15) && num(u.epoch) && num(u.serial) && num(u.sequence), 'clocks and counters');

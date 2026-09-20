@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-import type { Snapshot } from './types.ts';
+import type { CrashFrequency, Snapshot } from './types.ts';
+import { crashSchedule, CRASH_SECONDS, viewingSeconds, type CrashSequence } from './crashes.ts';
 import { createUniverse } from './universe.ts';
 import { freshSeed } from './random.ts';
 import { advance, reconcile } from './simulation.ts';
@@ -16,6 +17,7 @@ export class UniverseRuntime {
   speed = 1;
   lastSave = 0;
   stepMs = 0;
+  crash: CrashSequence | null = null;
   onChange: () => void = () => {};
   private lastTick = 0;
   private lastPoll = 0;
@@ -47,8 +49,12 @@ export class UniverseRuntime {
         const hold = new Promise<void>(release => { this.release = release; });
         try {
           const saved = await this.store.load();
-          if (saved) this.snapshot = saved;
-          if (this.paused) this.snapshot.savedAt = Math.max(this.snapshot.savedAt, Date.now());
+          if (saved) {
+            if (saved.universe.id !== this.snapshot.universe.id) this.crash = null;
+            this.snapshot = saved;
+          }
+          this.snapshot.crashSchedule ??= crashSchedule(this.snapshot.universe.seed);
+          if (this.paused || this.crash || (this.snapshot.crashSchedule.frequency !== 'off' && this.snapshot.crashSchedule.remaining === 0)) this.snapshot.savedAt = Math.max(this.snapshot.savedAt, Date.now());
           else reconcile(this.snapshot);
           this.mode = 'writer'; this.message = this.store.notice;
           await this.checkpoint();
@@ -73,11 +79,29 @@ export class UniverseRuntime {
     const elapsed = Math.max(0, monotonic - this.lastTick) / 1000;
     this.lastTick = monotonic;
     const started = performance.now();
+    const due = this.snapshot.crashSchedule;
+    if (!this.crash && !this.paused && this.mode === 'writer' && due && due.frequency !== 'off' && due.remaining === 0) {
+      this.crash = { remaining: CRASH_SECONDS, preview: false };
+      this.snapshot.savedAt = Math.max(this.snapshot.savedAt, now);
+      void this.checkpoint(); this.onChange(); return;
+    }
+    if (this.crash) {
+      this.snapshot.savedAt = Math.max(this.snapshot.savedAt, now);
+      this.crash.remaining = Math.max(0, this.crash.remaining - viewingSeconds(elapsed));
+      if (this.crash.remaining === 0) void this.finishCrash();
+      this.onChange(); return;
+    }
     if (!this.paused) {
       // A sleeping machine may advance wall time without advancing performance.now().
       const wallGap = Math.max(0, (now - this.snapshot.savedAt) / 1000);
       const dt = wallGap > elapsed + 5 ? wallGap : elapsed;
       advance(this.snapshot.universe, dt * this.speed, this.snapshot.anomalyRate);
+      // Automatic reboots require durable storage and exclusive writer ownership.
+      const schedule = this.snapshot.crashSchedule ??= crashSchedule(this.snapshot.universe.seed);
+      if (this.mode === 'writer' && schedule.frequency !== 'off') {
+        schedule.remaining = Math.max(0, schedule.remaining - viewingSeconds(elapsed));
+        if (schedule.remaining === 0) { this.crash = { remaining: CRASH_SECONDS, preview: false }; void this.checkpoint(); }
+      }
     }
     this.snapshot.savedAt = Math.max(this.snapshot.savedAt, now);
     this.stepMs = performance.now() - started;
@@ -104,8 +128,8 @@ export class UniverseRuntime {
     await this.writes; await this.checkpoint(); this.release?.(); this.release = undefined;
   }
   async resume(): Promise<void> { if (this.stopped) await this.start(); }
-  canMutate(): boolean { return !this.replacing && (this.mode === 'writer' || this.mode === 'memory'); }
-  canPause(): boolean { return !this.replacing && ['writer', 'memory', 'follower'].includes(this.mode); }
+  canMutate(): boolean { return !this.replacing && !this.crash && (this.mode === 'writer' || this.mode === 'memory'); }
+  canPause(): boolean { return !this.replacing && !this.crash && ['writer', 'memory', 'follower'].includes(this.mode); }
   setPaused(value: boolean): void {
     if (!this.canPause()) return;
     if (this.mode !== 'follower') this.tick();
@@ -114,12 +138,13 @@ export class UniverseRuntime {
   setSpeed(value: number): void { if (!this.canMutate()) return; this.tick(); this.speed = [1, 10, 100, 1000].includes(value) ? value : 1; this.lastTick = performance.now(); }
   async reset(): Promise<void> {
     if (!this.canMutate()) throw new Error('Open the active universe tab to reset.');
-    const next = { universe: createUniverse(freshSeed()), savedAt: Date.now(), anomalyRate: this.snapshot.anomalyRate };
+    const next = this.freshSnapshot();
     await this.replace(next);
   }
   async import(snapshot: Snapshot): Promise<void> {
     if (!this.canMutate()) throw new Error('Open the active universe tab to import.');
     const next = structuredClone(snapshot); reconcile(next);
+    if (next.crashSchedule?.remaining === 0) next.crashSchedule = crashSchedule(next.universe.seed, next.crashSchedule.frequency);
     await this.replace(next);
   }
   private async replace(next: Snapshot): Promise<void> {
@@ -130,4 +155,34 @@ export class UniverseRuntime {
     } finally { this.replacing = false; this.onChange(); }
   }
   anomaly(): void { if (this.canMutate()) { triggerAnomaly(this.snapshot.universe); this.onChange(); void this.checkpoint(); } }
+  setCrashFrequency(value: string): void {
+    if (!this.canMutate() || !['off', 'rare', 'occasional'].includes(value)) return;
+    this.snapshot.crashSchedule = crashSchedule(this.snapshot.universe.seed, value as CrashFrequency);
+    this.onChange(); void this.checkpoint();
+  }
+  previewCrash(): void {
+    if (!this.canMutate()) return;
+    this.crash = { remaining: CRASH_SECONDS, preview: true };
+    this.lastTick = performance.now(); this.onChange();
+  }
+  private freshSnapshot(): Snapshot {
+    const universe = createUniverse(freshSeed());
+    return { universe, savedAt: Date.now(), anomalyRate: this.snapshot.anomalyRate, crashSchedule: crashSchedule(universe.seed, this.snapshot.crashSchedule?.frequency) };
+  }
+  private async finishCrash(): Promise<void> {
+    if (!this.crash || this.replacing) return;
+    if (this.crash.preview) { this.crash = null; this.lastTick = performance.now(); this.onChange(); return; }
+    this.replacing = true;
+    try {
+      const previous = structuredClone(this.snapshot), next = this.freshSnapshot();
+      await this.queue(() => this.store.collapse(previous, next));
+      this.snapshot = next; this.lastSave = Date.now();
+    } catch {
+      // Never discard a universe when its archive could not be saved.
+      this.snapshot.crashSchedule = crashSchedule(this.snapshot.universe.seed, 'off');
+      this.message = 'Reboot cancelled: the universe could not be archived. Current universe preserved; simulated crashes disabled.';
+    } finally {
+      this.replacing = false; this.crash = null; this.lastTick = performance.now(); this.onChange();
+    }
+  }
 }

@@ -25,5 +25,7 @@ export interface Universe {
   events: SimulationEvent[]; anomalies: SimulationEvent[];
   history: { age: number; entropy: number; confidence: number; load: number }[];
 }
-export interface Snapshot { universe: Universe; savedAt: number; anomalyRate: number }
+export type CrashFrequency = 'off' | 'rare' | 'occasional';
+export interface CrashSchedule { frequency: CrashFrequency; remaining: number }
+export interface Snapshot { universe: Universe; savedAt: number; anomalyRate: number; crashSchedule?: CrashSchedule }
 export interface Preferences { theme: string; layout: 'adaptive' | 'observatory' | 'analysis'; quiet: boolean }
