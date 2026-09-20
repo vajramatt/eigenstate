@@ -12,12 +12,28 @@ const paths = ['/', '/favicon.svg', '/manifest.webmanifest', ...assets];
 await writeFile('dist/sw.js', `// SPDX-License-Identifier: MIT
 const CACHE = 'eigenstate-${version}';
 const ASSETS = ${JSON.stringify(paths)};
-self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))); });
-self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('eigenstate-') && k !== CACHE).map(k => caches.delete(k))))); });
+self.addEventListener('install', event => { event.waitUntil((async () => {
+  await (await caches.open(CACHE)).addAll(ASSETS);
+  await self.skipWaiting();
+})()); });
+self.addEventListener('activate', event => { event.waitUntil((async () => {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter(k => k.startsWith('eigenstate-') && k !== CACHE).map(k => caches.delete(k)));
+  await self.clients.claim();
+  const windows = await self.clients.matchAll({ type: 'window' });
+  await Promise.all(windows.map(client => client.navigate(client.url)));
+})()); });
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || !ASSETS.includes(url.pathname)) return;
   event.respondWith(caches.open(CACHE).then(async cache => {
+    if (event.request.mode === 'navigate') {
+      try {
+        const response = await fetch(event.request);
+        if (response.ok) await cache.put('/', response.clone());
+        return response;
+      } catch { return cache.match('/'); }
+    }
     const cached = await cache.match(url.pathname);
     return cached || fetch(event.request);
   }));
