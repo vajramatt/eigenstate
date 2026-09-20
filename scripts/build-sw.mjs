@@ -7,8 +7,10 @@ await cp('docs/licenses', 'dist/docs/licenses', { recursive: true });
 await cp('THIRD_PARTY_NOTICES.md', 'dist/THIRD_PARTY_NOTICES.md');
 await cp('LICENSE', 'dist/LICENSE');
 const html = await readFile('dist/index.html', 'utf8');
+const packageMeta = JSON.parse(await readFile('package.json', 'utf8'));
 const version = createHash('sha256').update(html).digest('hex').slice(0, 12);
 const paths = ['/', '/favicon.svg', '/manifest.webmanifest', ...assets];
+await writeFile('dist/version.json', `${JSON.stringify({ name: 'Eigenstate', version: packageMeta.version }, null, 2)}\n`);
 await writeFile('dist/sw.js', `// SPDX-License-Identifier: MIT
 const CACHE = 'eigenstate-${version}';
 const ASSETS = ${JSON.stringify(paths)};

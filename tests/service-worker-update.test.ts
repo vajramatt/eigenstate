@@ -11,4 +11,6 @@ test('service worker takes over installed apps and refreshes navigation from net
   assert.match(worker, /request\.mode === 'navigate'/);
   assert.match(registration, /registration\.update/);
   assert.match(registration, /updateViaCache:\s*'none'/);
+  assert.match(registration, /fetch\('\/version\.json', \{ cache: 'no-store' \}\)/);
+  assert.match(worker, /dist\/version\.json/);
 });

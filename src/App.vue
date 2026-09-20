@@ -16,6 +16,7 @@ import { AmbientHum } from './audio/hum.ts';
 
 const runtime = new UniverseRuntime();
 const hum = new AmbientHum();
+const appVersion = __APP_VERSION__;
 const humOn = ref(false), humVolume = ref(35);
 const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>(), privacy = ref<HTMLDialogElement>();
 const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
@@ -60,6 +61,7 @@ async function exportCollapsed() {
   } catch (e) { error.value = String(e); }
 }
 function notify(value: string) { toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4500); }
+function updateAvailable(event: Event) { notify(`Eigenstate ${(event as CustomEvent<string>).detail} found. Updating…`); }
 async function savePrefs() {
   applyTheme(theme.value);
   try { await runtime.store.savePreferences({ ...prefs.value }); }
@@ -189,6 +191,7 @@ onMounted(async () => {
   reduced.addEventListener('change', reducedChanged);
   document.addEventListener('visibilitychange', visibility); document.addEventListener('fullscreenchange', fullscreenChanged);
   document.addEventListener('keydown', keyboard); document.addEventListener('pointermove', activity); document.addEventListener('focusin', activity);
+  window.addEventListener('eigenstate:update-available', updateAvailable);
   window.addEventListener('pagehide', leave); window.addEventListener('pageshow', visibility);
   await nextTick();
 });
@@ -196,6 +199,7 @@ onBeforeUnmount(() => {
   leave(); clearTimeout(hideTimer); clearTimeout(toastTimer); void wake?.release(); void hum.destroy();
   document.removeEventListener('visibilitychange', visibility); document.removeEventListener('fullscreenchange', fullscreenChanged);
   document.removeEventListener('keydown', keyboard); document.removeEventListener('pointermove', activity); document.removeEventListener('focusin', activity);
+  window.removeEventListener('eigenstate:update-available', updateAvailable);
   window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', visibility); reduced?.removeEventListener('change', reducedChanged);
 });
 </script>
@@ -204,7 +208,7 @@ onBeforeUnmount(() => {
   <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, `director-${director.phase}`, { 'motion-still': prefs.quiet || halted }]">
     <CrashScreen v-if="crash" :crash="crash" :universe="universe" />
     <header class="topbar">
-      <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ 0.2</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
+      <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ {{ appVersion }}</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
       <nav class="controls" aria-label="Observatory controls">
         <a class="back-link" href="https://crossinginto.ai/tools">Crossing Into <span aria-hidden="true">↗</span></a>
         <button class="shortcut-theme" title="Next theme (T)" aria-label="Next theme" @click="nextTheme">t</button><label class="theme-picker"><span class="theme-dot" aria-hidden="true"></span><span class="sr-only">Color theme</span><select aria-label="Color theme" :value="prefs.theme" @change="changeTheme"><option v-for="t in themes" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
