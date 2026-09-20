@@ -3,8 +3,11 @@
 export class AmbientHum {
   private context?: AudioContext;
   private master?: GainNode;
+  private filter?: BiquadFilterNode;
+  private breathLfo?: OscillatorNode;
   private stopTimer?: ReturnType<typeof setTimeout>;
   private nodes: AudioNode[] = [];
+  private activity = 0.22;
   enabled = false;
   volume = 0.35;
   private active = true;
@@ -28,6 +31,7 @@ export class AmbientHum {
       // and pause always silence the complete signal, including modulation.
       lfo.connect(depth); depth.connect(breath.gain); lfo.start();
       const filter = this.context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 380; filter.Q.value = 0.4; filter.connect(breath);
+      this.filter = filter; this.breathLfo = lfo; this.setActivity(this.activity);
       this.nodes.push(filter, breath, lfo, depth, this.master);
       // Keep audible upper harmonics so the hum does not depend on deep bass output.
       for (const [frequency, level] of [[55, 0.55], [110.06, 0.22], [165, 0.12]]) {
@@ -39,11 +43,19 @@ export class AmbientHum {
     await this.sync(this.active);
   }
   setVolume(volume: number): void { this.volume = Math.min(1, Math.max(0, volume)); this.setGain(); }
+  setActivity(activity: number): void {
+    this.activity = Math.min(1, Math.max(0, activity));
+    if (!this.context) return;
+    const time = this.context.currentTime;
+    this.filter?.frequency.setTargetAtTime(250 + this.activity * 230, time, 1.8);
+    this.breathLfo?.frequency.setTargetAtTime(0.055 + this.activity * 0.08, time, 2.5);
+    this.setGain();
+  }
   private setGain(): void {
     if (!this.context || !this.master) return;
     const time = this.context.currentTime;
     this.master.gain.cancelScheduledValues(time);
-    this.master.gain.setTargetAtTime(this.enabled && this.active ? this.volume * 0.2 : 0, time, 0.25);
+    this.master.gain.setTargetAtTime(this.enabled && this.active ? this.volume * (0.16 + this.activity * 0.05) : 0, time, 0.45);
   }
   private fadeOut(): void {
     if (!this.context) return;
@@ -59,6 +71,6 @@ export class AmbientHum {
   async destroy(): Promise<void> {
     clearTimeout(this.stopTimer);
     for (const node of this.nodes) { if (node instanceof OscillatorNode) node.stop(); node.disconnect(); }
-    this.nodes = []; await this.context?.close(); this.context = undefined; this.master = undefined;
+    this.nodes = []; await this.context?.close(); this.context = undefined; this.master = undefined; this.filter = undefined; this.breathLfo = undefined;
   }
 }

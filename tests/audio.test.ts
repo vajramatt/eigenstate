@@ -44,6 +44,8 @@ test('hum creates audio only on request and reports pause, mute, and playing sta
   assert.ok(breath.gain.value + depth.gain.value <= 1, 'modulation must not amplify the peak');
   assert.ok(breath.connections.includes(Context.last.gains[0]), 'master volume must remain after modulation');
   assert.deepEqual(Context.last.oscillators.filter(o => o.frequency.value > 1).map(o => o.frequency.value), [55, 110.06, 165]);
+  hum.setActivity(0); const quietGain = Context.last.gains[0].gain.target;
+  hum.setActivity(1); assert.ok(Context.last.gains[0].gain.target > quietGain, 'simulation activity should subtly raise the hum');
   await hum.sync(false); assert.equal(hum.status, 'paused'); assert.equal(Context.last.gains[0].gain.target, 0);
   await hum.sync(true); assert.equal(hum.status, 'playing');
   hum.setVolume(0); assert.equal(hum.status, 'muted'); assert.equal(Context.last.gains[0].gain.target, 0);

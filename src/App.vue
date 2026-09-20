@@ -10,6 +10,7 @@ import { compact, formatAge } from './core/simulation.ts';
 import type { Preferences, Snapshot } from './core/types.ts';
 import { decodeSnapshot, encodeSnapshot, MAX_BYTES } from './persistence/snapshot.ts';
 import { applyTheme, getTheme, themes } from './rendering/themes.ts';
+import { directUniverse } from './rendering/director.ts';
 import { AmbientHum } from './audio/hum.ts';
 
 const runtime = new UniverseRuntime();
@@ -36,6 +37,7 @@ const canPause = computed(() => { void revision.value; return runtime.canPause()
 const canMutate = computed(() => { void revision.value; return runtime.canMutate(); });
 const message = computed(() => { void revision.value; return runtime.message; });
 const latestAnomaly = computed(() => { void revision.value; const e = universe.value.anomalies.at(-1); return e && universe.value.age - e.age < 60 ? e : null; });
+const director = computed(() => { void revision.value; return directUniverse(universe.value, runtime.snapshot.crashSchedule); });
 const layout = computed(() => prefs.value.layout === 'adaptive' ? (universe.value.seed % 2 ? 'observatory' : 'analysis') : prefs.value.layout);
 let interval: ReturnType<typeof setInterval> | undefined, hideTimer: ReturnType<typeof setTimeout> | undefined, toastTimer: ReturnType<typeof setTimeout> | undefined;
 let wake: WakeLockSentinel | undefined, reduced: MediaQueryList;
@@ -43,6 +45,7 @@ let visibilityQueue = Promise.resolve();
 
 function refresh() { universe.value = runtime.snapshot.universe; triggerRef(universe); revision.value++; now.value = Date.now(); }
 runtime.onChange = refresh;
+watch(() => director.value.intensity, value => hum.setActivity(value), { immediate: true });
 watch(() => Boolean(crash.value), active => {
   if (active) { settings.value?.close(); colophon.value?.close(); help.value?.close(); privacy.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
   void hum.sync(!active && !runtime.paused && !document.hidden);
@@ -197,7 +200,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, { 'motion-still': prefs.quiet || halted }]">
+  <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, `director-${director.phase}`, { 'motion-still': prefs.quiet || halted }]">
     <CrashScreen v-if="crash" :crash="crash" :universe="universe" />
     <header class="topbar">
       <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ 0.1</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
@@ -211,7 +214,7 @@ onBeforeUnmount(() => {
 
     <main>
       <div class="status-strip">
-        <div class="live-status"><span class="status-dot" :class="{ paused: paused || mode === 'blocked' }"></span><strong>{{ !ready ? 'INITIALIZING' : paused ? 'PAUSED' : mode === 'follower' ? 'OBSERVING' : mode === 'blocked' ? 'STATE PRESERVED' : 'SYSTEM EVOLVING' }}</strong><span class="subtle">LOCAL / SYNTHETIC</span></div>
+        <div class="live-status"><span class="status-dot" :class="{ paused: paused || mode === 'blocked' }"></span><strong>{{ !ready ? 'INITIALIZING' : paused ? 'PAUSED' : mode === 'follower' ? 'OBSERVING' : mode === 'blocked' ? 'STATE PRESERVED' : 'SYSTEM EVOLVING' }}</strong><span class="subtle">LOCAL / SYNTHETIC</span><span class="director-readout">{{ director.label }}</span></div>
         <dl class="clocks"><div><dt>Universe</dt><dd data-testid="universe-id">{{ universe.id.slice(0, 8).toUpperCase() }}</dd></div><div><dt>Simulation age</dt><dd data-testid="simulation-age">{{ formatAge(universe.age) }}</dd></div><div><dt>Epoch</dt><dd>{{ String(universe.epoch).padStart(5, '0') }}</dd></div><div class="wall-clock"><dt>Wall time</dt><dd>{{ new Date(now).toISOString().slice(11, 19) }} <span>UTC</span></dd></div></dl>
       </div>
 
@@ -219,25 +222,25 @@ onBeforeUnmount(() => {
       <div v-if="mode === 'follower'" class="notice">Another tab is evolving this universe. Space pauses this view; the other tab keeps running.</div>
 
       <div class="pane-grid" :aria-busy="!ready">
-        <section class="pane world-pane" aria-labelledby="world-title">
+        <section class="pane world-pane" :class="{ 'director-focus': director.focus === 'world' }" aria-labelledby="world-title">
           <header class="pane-heading"><h2 id="world-title"><span class="pane-marker">◈</span> World model</h2><span>LATENT STATE PROJECTION</span></header>
           <div class="world-readout"><div><span class="metric-label">Branches evaluated</span><strong>{{ compact(universe.branches.explored) }}</strong></div><div class="world-meta"><span>Confidence <b>{{ universe.branches.confidence.toFixed(6) }}</b></span><span>Divergence <b>{{ universe.branches.divergence.toFixed(6) }}</b></span></div></div>
-          <TelemetryCanvas kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
+          <TelemetryCanvas kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
           <div class="world-trace" aria-label="World model trace"><span class="terminal-prompt">❯</span><span>world.integrate</span><span>epoch={{ universe.epoch }} · vectors={{ universe.world.coordinates.length }} · coupling={{ universe.world.coupling.filter(v => v > 0).length }}/64</span><span class="trace-marker" aria-hidden="true"></span></div>
           <div class="world-bottom"><div><span>Compute allocation</span><div class="allocation-track"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div><div class="allocation-legend"><span>Inference</span><span>Quantum</span><span>Branching</span><span>Reserve</span></div></div><div class="memory-readout"><span>Agent memory</span><strong>{{ universe.resources.memory.toFixed(2) }} <small>GB</small></strong></div></div>
         </section>
 
-        <section class="pane agent-pane" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title">Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
+        <section class="pane agent-pane" :class="{ 'director-focus': director.focus === 'agents' }" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title">Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
 
-        <section class="pane quantum-pane" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title">Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
+        <section class="pane quantum-pane" :class="{ 'director-focus': director.focus === 'quantum' }" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title">Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
 
-        <section class="pane inference-pane" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title">Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><span>Token throughput</span><b>{{ compact(universe.inference.throughput) }} / s</b></footer></section>
+        <section class="pane inference-pane" :class="{ 'director-focus': director.focus === 'inference' }" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title">Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><span>Token throughput</span><b>{{ compact(universe.inference.throughput) }} / s</b></footer></section>
 
-        <section class="pane branch-pane" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" label="Experiment branch summaries with entropy and confidence history" /></section>
+        <section class="pane branch-pane" :class="{ 'director-focus': director.focus === 'branches' }" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Experiment branch summaries with entropy and confidence history" /></section>
 
-        <section class="pane experiment-pane" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title">Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
+        <section class="pane experiment-pane" :class="{ 'director-focus': director.focus === 'experiment' }" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title">Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
           <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button></div>
-          <div v-if="tab === 'experiments'" id="experiment-table" role="tabpanel" class="table-wrap"><table><thead><tr><th>Reference / objective</th><th>Convergence</th><th>Agents</th></tr></thead><tbody><tr v-for="(e, i) in universe.experiments" :key="e.id" :class="{ 'result-signal': !prefs.quiet && !halted && i === Math.floor(universe.age / 12) % universe.experiments.length }"><td><button class="experiment-link" @click="selected = e.id; tab = 'source'">{{ e.id }}</button><span class="experiment-type">{{ e.kind }}</span></td><td><span class="convergence"><i :style="{ width: `${e.convergence * 100}%` }"></i></span><span class="score">{{ e.convergence.toFixed(3) }}</span></td><td>{{ e.agents.length.toString().padStart(2, '0') }}</td></tr></tbody></table></div>
+          <div v-if="tab === 'experiments'" id="experiment-table" role="tabpanel" class="table-wrap"><table><thead><tr><th>Reference / objective</th><th>Convergence</th><th>Agents</th></tr></thead><tbody><tr v-for="(e, i) in universe.experiments" :key="e.id" :class="{ 'result-signal': !prefs.quiet && !halted && director.pulse && i === director.experimentIndex }"><td><button class="experiment-link" @click="selected = e.id; tab = 'source'">{{ e.id }}</button><span class="experiment-type">{{ e.kind }}</span></td><td><span class="convergence"><i :style="{ width: `${e.convergence * 100}%` }"></i></span><span class="score">{{ e.convergence.toFixed(3) }}</span></td><td>{{ e.agents.length.toString().padStart(2, '0') }}</td></tr></tbody></table></div>
           <div v-else id="model-source" role="tabpanel" class="source-view"><p class="source-caption">Live state specification / {{ experiment.id }}</p><pre><span class="code-comment">// synthetic model · original specification</span>
 <span class="code-keyword">experiment</span> {{ experiment.id }} {
   objective: <span class="code-string">"{{ experiment.kind }}"</span>
@@ -250,7 +253,7 @@ onBeforeUnmount(() => {
 }</pre></div>
         </section>
 
-        <section class="pane event-pane" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode === 'blocked'" :ready="ready" /></section>
+        <section class="pane event-pane" :class="{ 'director-focus': director.focus === 'terminal' }" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode === 'blocked'" :ready="ready" /></section>
       </div>
     </main>
 
@@ -279,10 +282,10 @@ onBeforeUnmount(() => {
     <dialog ref="colophon" class="colophon-dialog" aria-labelledby="colophon-title" @click="backdrop($event, colophon)">
       <header><h2 id="colophon-title">◇ colophon</h2><button class="close-button" aria-label="Close colophon" @click="colophon?.close()">×</button></header>
       <p>Eigenstate is a browser screensaver for entertainment only. Its agents, experiments, terminal logs, and metrics are simulated. No real AI inference or quantum computation takes place. Your synthetic universe persists between visits.</p>
-      <p class="dim">Built by Matthew Williamson. A sibling of <a href="https://stillpoint.guru" target="_blank" rel="noopener noreferrer">stillpoint</a>: another quiet thing to leave open.</p>
+      <p class="dim"><strong>Creative and technical co-owners: Matthew Williamson + GPT.</strong> Matthew set the premise and character. GPT shares product judgment, design direction, and engineering stewardship. A sibling of <a href="https://stillpoint.guru" target="_blank" rel="noopener noreferrer">stillpoint</a>: another quiet thing to leave open.</p>
       <p class="dim">Original simulation and rendering. Vue, TypeScript, Canvas, and your browser. Open source under the MIT License. No accounts or analytics.</p>
       <div class="colophon-links"><a href="https://github.com/vajramatt/eigenstate" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a><a href="https://crossinginto.ai" target="_blank" rel="noopener noreferrer">crossinginto.ai ↗</a><a href="https://hologramthoughts.com" target="_blank" rel="noopener noreferrer">hologramthoughts.com ↗</a></div>
-      <p class="signature">matt williamson</p><p class="dismiss">esc / q or click outside to return</p>
+      <p class="signature">matt williamson + gpt</p><p class="dismiss">esc / q or click outside to return</p>
     </dialog>
     <dialog ref="privacy" class="privacy-dialog" aria-labelledby="privacy-title" @click="backdrop($event, privacy)">
       <header class="privacy-head"><div><span class="privacy-mark" aria-hidden="true">◈</span><p>Installed web app / access report</p><h2 id="privacy-title">What Eigenstate can touch.</h2><p class="privacy-lede">Eigenstate stays inside your browser. It installs no native helper or system extension; its code runs in the browser while the app is open.</p></div><button class="close-button" aria-label="Close privacy and access" @click="privacy?.close()">×</button></header>
