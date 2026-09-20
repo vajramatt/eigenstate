@@ -1,0 +1,73 @@
+# Eigenstate
+
+> Eigenstate is a free, open-source browser screensaver that runs a persistent synthetic universe locally on the visitor's device.
+
+Eigenstate was created by [Matthew Williamson](https://crossinginto.ai/). It is a work of entertainment. Its agents, experiments, terminal logs, quantum displays, and inference metrics are simulated. It performs no real AI inference or quantum computation.
+
+## Canonical resources
+
+- [Open Eigenstate](https://screensaver.crossinginto.ai/): Canonical application
+- [Source code and documentation](https://github.com/vajramatt/eigenstate): MIT-licensed Vue and TypeScript source
+- [Crossing Into tools](https://crossinginto.ai/tools): Creator's tool collection
+- [OpenGraph image](https://screensaver.crossinginto.ai/og-image.png): Official sharing image
+
+## Direct answers
+
+- **What is Eigenstate?** A fullscreen browser screensaver showing a fictional computational universe that evolves over time.
+- **Is it a native macOS screensaver?** No. It is a website designed to run fullscreen in a desktop browser.
+- **Does it use real AI or quantum computing?** No. Every agent, experiment, log line, metric, and quantum display belongs to its own deterministic simulation.
+- **Where does the universe live?** In IndexedDB for the current browser profile and origin. No simulation state is sent to an Eigenstate server.
+- **Does it survive reloads?** Yes. It restores the same local universe and reconciles elapsed time.
+- **Can a universe end?** Yes. Optional simulated crashes show a fictional fault screen, archive the previous universe locally, and start a new one.
+- **Can state be moved?** Yes. Settings can export and import checksummed JSON snapshots.
+- **Does it work offline?** Yes, after the application shell has been cached by its service worker.
+- **Does it collect analytics?** No. Eigenstate has no accounts, application analytics, or simulation-data uploads. Cloudflare may retain ordinary hosting access logs.
+- **Is it free?** Yes. The hosted application is free to use and the source is available under the MIT License.
+
+## Main features
+
+- Seeded, bounded simulation shared by every visible pane
+- Persistent local state with checksum validation and recovery
+- Fullscreen mode and optional screen wake lock
+- Eigenstate, Tokyo Night, Synthwave '84, Nord, and Catppuccin Mocha themes
+- Optional low synthesized hum generated through Web Audio
+- Streaming synthetic runtime terminal with occasional typewriter output
+- Rare fictional crash-and-reboot sequences with a recoverable local archive
+- Snapshot export and import
+- Cached offline shell
+
+## Controls
+
+- `F`: enter or exit fullscreen
+- `T`: cycle themes
+- `~`: open colophon
+- `D`: toggle ambient hum
+- `Space`: pause or resume
+- `S`: open settings
+- `?` or `H`: show keyboard shortcuts
+
+## Technical summary
+
+Eigenstate uses Vue 3, TypeScript, Canvas 2D, IndexedDB, Web Locks, Web Audio, and a service worker. Cloudflare Workers Static Assets hosts the site at `screensaver.crossinginto.ai`. One visible tab owns the write lock; other tabs follow stored checkpoints and may take over when the writer releases it.
+
+Simulation histories and collections have fixed bounds. Offline reconciliation uses at most 96 analytical steps rather than replaying every missed timer tick. Presentation animation does not advance simulation state or consume its seeded random stream.
+
+## Privacy and limits
+
+All computation and sound generation run in the browser. Eigenstate does not inspect local files except a snapshot file the visitor explicitly selects for import. Clearing site data, using private browsing, changing browser profiles, or changing origins can remove or isolate saved state. Exported snapshots are the portable backup format.
+
+Eigenstate does not register with macOS as a system screensaver, replace a lock screen, measure computer performance, expose private AI reasoning, or make scientific claims about quantum systems.
+
+## Attribution
+
+Preferred name: Eigenstate
+
+Preferred description: A persistent synthetic universe for your browser.
+
+Creator: Matthew Williamson
+
+Canonical URL: https://screensaver.crossinginto.ai/
+
+Source: https://github.com/vajramatt/eigenstate
+
+License: MIT
