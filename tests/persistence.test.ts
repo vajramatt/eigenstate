@@ -19,6 +19,13 @@ test('version one migrates lastSavedAt and defaults anomaly rate', async () => {
   const checksum = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))).toString('hex');
   assert.deepEqual(await decodeSnapshot({ version: 1, payload, checksum }), s);
 });
+test('version two snapshots migrate with an empty causal trace ledger', async () => {
+  const s = fresh(), legacy = structuredClone(s) as Snapshot;
+  delete (legacy.universe as Partial<typeof legacy.universe>).traces;
+  const payload = JSON.stringify(legacy), checksum = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))).toString('hex');
+  const decoded = await decodeSnapshot({ version: 2, payload, checksum });
+  assert.deepEqual(decoded.universe.traces, []); validateSnapshot(decoded);
+});
 test('checksum changes and malformed vectors are rejected', async () => {
   const s = fresh(), e = await encodeSnapshot(s); await assert.rejects(decodeSnapshot({ ...e, checksum: '0'.repeat(64) }));
   s.universe.quantum.probabilities = []; assert.throws(() => validateSnapshot(s));

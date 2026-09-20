@@ -2,7 +2,7 @@
 
 [Open Eigenstate](https://screensaver.crossinginto.ai) · [Source on GitHub](https://github.com/vajramatt/eigenstate)
 
-A persistent generative observatory inspired by scientific computing interfaces, frontier AI systems, and quantum research environments. Open it, enter fullscreen, and watch a synthetic universe evolve. Between visits, it resumes with the same identity and a reconciled history. Occasional simulated crashes archive that universe and begin a new one.
+A persistent generative observatory inspired by scientific computing interfaces, frontier AI systems, and quantum research environments. Open it, enter fullscreen, and watch a synthetic universe evolve. Agent topology changes experiment capacity; experiments reshape the world model; bounded causal traces preserve what happened. Between visits, it resumes with the same identity and a reconciled history. Occasional simulated crashes archive that universe and begin a new one.
 
 Eigenstate is a browser screensaver for entertainment only. All agents, terminal logs, and metrics are simulated. It performs no real AI inference or quantum computation. The numbers describe its own synthetic simulation; they are not measurements of your computer or private reasoning traces.
 
@@ -61,6 +61,7 @@ src/core/
   engines.ts         agent, experiment, branch, quantum, inference, world engines
   anomalies.ts       events that alter actual simulated state
   simulation.ts      live advancement and elapsed-time reconciliation
+  traces.ts          topology → experiment → world causal records
   runtime.ts         writer ownership, pause, lifecycle, checkpoint queue
 src/persistence/
   snapshot.ts        validation, SHA-256 envelope, version migration
@@ -72,7 +73,7 @@ src/App.vue          observatory, preferences, colophon, controls
 scripts/build-sw.mjs versioned offline asset cache
 ```
 
-All panes read one `Universe`. Agent dependencies produce graph edges; experiment membership produces registry rows; persisted latent vectors produce the world projection. The branch fan is a summary of seven experiments, not an explicit tree containing millions of branches. The model specification panel displays current experiment state and executes no code.
+All panes read one `Universe`. Agent dependencies produce graph edges; active and waiting agents determine experiment capacity; experiment convergence guides persisted world coordinates. Each topology change retains a bounded causal record linking agent event, experiment effect, and world-model displacement. The branch fan is a summary of seven experiments, not an explicit tree containing millions of branches. Model specification and trace panels display saved state and execute no code.
 
 The simulation updates once a second while visible. Canvas panes render at up to 30 frames per second, with a slow camera orbit, drifting agent positions, signals along active dependencies, and interpolated quantum and inference values. These presentation effects never advance the simulation or its PRNG. Offscreen panes stop drawing. Quiet mode disables continuous motion and refreshes at most once every five seconds. The page stops its simulation timer when hidden and reconciles elapsed time on return. A service worker caches application assets; it does not run the simulation in the background.
 
@@ -90,11 +91,11 @@ Only the most recent crashed universe is retained. **Settings → Export last cr
 
 State lives in the browser's IndexedDB database `eigenstate-v1`, within the current origin. The `state` store holds a current snapshot, previous checkpoint, last crashed universe, and at most three quarantined corrupt records. The `settings` store holds theme, layout, and quiet-mode preferences separately. For Matthew's deployment, the origin is `https://screensaver.crossinginto.ai`.
 
-Each snapshot contains a version, JSON payload, and SHA-256 checksum. The payload holds universe identity, seed, PRNG state, elapsed age, entities, summary counters, bounded history, anomaly rate, optional crash frequency and remaining viewing time, and last wall-clock timestamp. No endless terminal transcript is stored.
+Each snapshot contains a version, JSON payload, and SHA-256 checksum. The payload holds universe identity, seed, PRNG state, elapsed age, entities, summary counters, bounded history, up to 48 causal traces, anomaly rate, optional crash frequency and remaining viewing time, and last wall-clock timestamp. No endless terminal transcript is stored.
 
 Checkpoint writes replace the current state in one IndexedDB transaction every 15 seconds and when the page becomes hidden. The previous checkpoint is updated in the same transaction. Abrupt termination can lose up to one checkpoint interval of live detail; the next session reconciles the elapsed gap. Teardown is a best effort, not the only save mechanism.
 
-On load, Eigenstate checks the checksum, format version, entity limits, references, vector dimensions, and numeric bounds. Version 1's `lastSavedAt` field migrates to version 2's `savedAt`, with a default anomaly rate. A corrupt current snapshot is quarantined, then the previous checkpoint is tried. If neither loads, a new universe starts with a visible recovery notice. Unknown future versions are preserved without overwrite. Imports are size-limited, validated, and confirmed before replacement.
+On load, Eigenstate checks the checksum, format version, entity limits, references, vector dimensions, and numeric bounds. Version 1's `lastSavedAt` field migrates to `savedAt` with a default anomaly rate. Version 2 gains an empty causal trace ledger. A corrupt current snapshot is quarantined, then the previous checkpoint is tried. If neither loads, a new universe starts with a visible recovery notice. Unknown future versions are preserved without overwrite. Imports are size-limited, validated, and confirmed before replacement.
 
 Web Locks permit only one tab at a time to write a universe. Other visible tabs follow checkpoints and can take over after the writer releases its lock. A hidden writer checkpoints and releases ownership. If safe persistence is unavailable, a visible notice explains that the session must be exported to keep it.
 

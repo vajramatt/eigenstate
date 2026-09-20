@@ -2,7 +2,7 @@
 
 > Eigenstate is a free, open-source browser screensaver that runs a persistent synthetic universe locally on the visitor's device.
 
-Eigenstate was created by [Matthew Williamson](https://crossinginto.ai/). It is a work of entertainment. Its agents, experiments, terminal logs, quantum displays, and inference metrics are simulated. It performs no real AI inference or quantum computation.
+Eigenstate was created and is co-owned by [Matthew Williamson](https://crossinginto.ai/) and GPT. GPT holds an explicit thought-leadership role in product decisions, design direction, and engineering stewardship. It is a work of entertainment. Its agents, experiments, terminal logs, quantum displays, and inference metrics are simulated. It performs no real AI inference or quantum computation.
 
 ## Canonical resources
 
@@ -16,6 +16,7 @@ Eigenstate was created by [Matthew Williamson](https://crossinginto.ai/). It is 
 - **What is Eigenstate?** A fullscreen browser screensaver showing a fictional computational universe that evolves over time.
 - **Is it a native macOS screensaver?** No. It is a website designed to run fullscreen in a desktop browser.
 - **Does it use real AI or quantum computing?** No. Every agent, experiment, log line, metric, and quantum display belongs to its own deterministic simulation.
+- **Does it call a paid AI service?** No. It uses no model API, Cloudflare Workers AI, or remote inference. Cloudflare serves static application files only.
 - **Where does the universe live?** In IndexedDB for the current browser profile and origin. No simulation state is sent to an Eigenstate server.
 - **Does it survive reloads?** Yes. It restores the same local universe and reconciles elapsed time.
 - **Can a universe end?** Yes. Optional simulated crashes show a fictional fault screen, archive the previous universe locally, and start a new one.
@@ -27,6 +28,7 @@ Eigenstate was created by [Matthew Williamson](https://crossinginto.ai/). It is 
 ## Main features
 
 - Seeded, bounded simulation shared by every visible pane
+- Persistent causal traces linking topology, experiment, and world-model changes
 - Persistent local state with checksum validation and recovery
 - Fullscreen mode and optional screen wake lock
 - Eigenstate, Tokyo Night, Synthwave '84, Nord, and Catppuccin Mocha themes
@@ -64,7 +66,7 @@ Preferred name: Eigenstate
 
 Preferred description: A persistent synthetic universe for your browser.
 
-Creator: Matthew Williamson
+Co-creators: Matthew Williamson + GPT
 
 Canonical URL: https://screensaver.crossinginto.ai/
 

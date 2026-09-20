@@ -29,6 +29,15 @@ test('live agent links and probabilities remain valid with anomalies disabled', 
   for (let i = 0; i < 3600; i++) advance(s.universe, 1, 0);
   assert.equal(s.universe.totals.anomalies, 0); assert.ok(s.universe.agents.some(a => a.tasks > 1)); validateSnapshot(s);
 });
+test('topology changes alter experiments and retain bounded world-model traces', () => {
+  const s = fixture();
+  for (let i = 0; i < 120 && !s.universe.traces.length; i++) advance(s.universe, 1, 0);
+  const trace = s.universe.traces.at(-1); assert.ok(trace);
+  assert.match(trace.experimentEffect, /capacity .* convergence .* allocation/);
+  assert.match(trace.worldEffect, /latent displacement/);
+  assert.ok(s.universe.events.some(event => event.kind === 'trace' && event.subject === trace.id));
+  assert.ok(s.universe.traces.length <= 48); validateSnapshot(s);
+});
 test('each anomaly changes a real subsystem and adds bounded history', () => {
   ANOMALIES.forEach((name, i) => {
     const s = fixture(), before = structuredClone(s.universe); triggerAnomaly(s.universe, i);
@@ -41,7 +50,7 @@ test('twenty-four years stay bounded and compact', async () => {
   const s = fixture();
   for (let i = 0; i < 24; i++) advance(s.universe, 365 * 86400, 6);
   validateSnapshot(s); assert.ok(s.universe.events.length <= 80); assert.ok(s.universe.anomalies.length <= 16);
-  assert.ok(s.universe.history.length <= 96); assert.ok(s.universe.agents.length <= 32); assert.equal(s.universe.experiments.length, 7);
+  assert.ok(s.universe.history.length <= 96); assert.ok(s.universe.traces.length <= 48); assert.ok(s.universe.agents.length <= 32); assert.equal(s.universe.experiments.length, 7);
   assert.ok((await encodeSnapshot(s)).payload.length < 150_000);
 });
 test('non-finite and invalid inputs cannot advance state', () => {

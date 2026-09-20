@@ -3,6 +3,7 @@ import type { Snapshot, Universe } from './types.ts';
 import { LIMITS } from './types.ts';
 import { agentEngine, experimentEngine, branchEngine, quantumEngine, inferenceEngine, worldEngine, anomalyEngine } from './engines.ts';
 import { event } from './universe.ts';
+import { captureCausalFrame, retainCausalTraces } from './traces.ts';
 
 /** Bounded reconciliation. Equal starting states + equal durations reproduce equal results. */
 export function advance(u: Universe, duration: number, anomalyRate = 0.35): void {
@@ -10,9 +11,11 @@ export function advance(u: Universe, duration: number, anomalyRate = 0.35): void
   if (!Number.isFinite(anomalyRate) || anomalyRate < 0 || anomalyRate > 60) throw new Error('Invalid anomaly rate');
   const elapsed = Math.min(duration, 1e12), steps = Math.min(96, Math.max(1, Math.ceil(elapsed / 30))), dt = elapsed / steps;
   for (let i = 0; i < steps; i++) {
+    const causal = captureCausalFrame(u);
     u.age += dt; u.epoch = Math.floor(u.age / 900);
     agentEngine(u, dt); experimentEngine(u, dt); branchEngine(u, dt); quantumEngine(u, dt);
     inferenceEngine(u, dt); worldEngine(u, dt); anomalyEngine(u, dt, anomalyRate);
+    retainCausalTraces(u, causal);
     if (u.age - (u.history.at(-1)?.age ?? -10) >= 10) {
       u.history.push({ age: u.age, entropy: u.branches.entropy, confidence: u.branches.confidence, load: u.inference.load });
       if (u.history.length > LIMITS.history) u.history.shift();

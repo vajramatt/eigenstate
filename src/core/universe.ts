@@ -36,7 +36,7 @@ export function createUniverse(seed: number, now = Date.now(), id = crypto.rando
     inference: { load: 0.63, context: 0.44, throughput: 3800, tokens: 0, retrievals: 0, tools: 0, agreement: 0.91, layers: [], routing: [0.42, 0.31, 0.27] },
     resources: { compute: 0.64, memory: 4.8, allocations: [0.38, 0.24, 0.22, 0.16] },
     world: { coordinates: [], coupling: [] }, totals: { spawned: 0, retired: 0, converged: 0, failed: 0, anomalies: 0 },
-    events: [], anomalies: [], history: [],
+    events: [], anomalies: [], traces: [], history: [],
   };
   for (const kind of KINDS) { const e = experiment(u, kind); e.uncertainty = 1 - e.convergence; u.experiments.push(e); }
   for (let i = 0; i < 20; i++) spawn(u);

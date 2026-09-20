@@ -44,6 +44,6 @@ npm run deploy
 
 ## Constraints
 
-Keep simulation offline. Never inspect user content, send simulation state to a server, or add analytics. Only user-selected snapshot imports may read files. Bound histories and collections. Only the seeded provider supplies simulation randomness; cryptographic randomness is reserved for new identity creation. Web Locks protect the universe from multiple writers. Respect reduced motion and hidden tabs. Hum requires a user gesture and starts off. Preserve existing universes during tests.
+Keep simulation offline. Never inspect user content, send simulation state to a server, or add analytics. Only user-selected snapshot imports may read files. Bound histories and collections. Every visible disturbance should derive from shared state, and every meaningful cause should leave a bounded trace. Only the seeded provider supplies simulation randomness; cryptographic randomness is reserved for new identity creation. Web Locks protect the universe from multiple writers. Respect reduced motion and hidden tabs. Hum requires a user gesture and starts off. Preserve existing universes during tests.
 
 The abandoned native prototype is stored in ignored `.native-prototype/` for local reference. It is not part of the product or build.

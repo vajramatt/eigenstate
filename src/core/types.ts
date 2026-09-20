@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-export const LIMITS = { agents: 32, experiments: 7, events: 80, anomalies: 16, history: 96 } as const;
+export const LIMITS = { agents: 32, experiments: 7, events: 80, anomalies: 16, history: 96, traces: 48 } as const;
 export const KINDS = ['world model', 'causal inference', 'optimization', 'recursive planning', 'quantum simulation', 'adversarial evaluation', 'representation learning'] as const;
 export type ExperimentKind = typeof KINDS[number];
 export interface Agent {
@@ -13,6 +13,10 @@ export interface Experiment {
   status: 'running' | 'converged' | 'failed';
 }
 export interface SimulationEvent { seq: number; age: number; kind: string; subject: string; message: string }
+export interface CausalTrace {
+  id: string; age: number; eventSeq: number; agent: string; experiment: string;
+  cause: string; experimentEffect: string; worldEffect: string;
+}
 export interface Universe {
   id: string; seed: number; rng: number; createdAt: number; age: number; epoch: number; serial: number; sequence: number;
   agents: Agent[]; experiments: Experiment[];
@@ -22,7 +26,7 @@ export interface Universe {
   resources: { compute: number; memory: number; allocations: number[] };
   world: { coordinates: number[][]; coupling: number[] };
   totals: { spawned: number; retired: number; converged: number; failed: number; anomalies: number };
-  events: SimulationEvent[]; anomalies: SimulationEvent[];
+  events: SimulationEvent[]; anomalies: SimulationEvent[]; traces: CausalTrace[];
   history: { age: number; entropy: number; confidence: number; load: number }[];
 }
 export type CrashFrequency = 'off' | 'rare' | 'occasional';

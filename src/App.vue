@@ -27,9 +27,10 @@ const pendingImport = shallowRef<Snapshot>(), importDialog = ref<HTMLDialogEleme
 const resetText = ref(''), error = ref(''), toast = ref(''), persistent = ref(false), storageChecked = ref(false);
 const full = ref(false), idle = ref(false), wakeRequested = ref(false), wakeHeld = ref(false);
 const development = import.meta.env.DEV;
-const debug = ref(development), tab = ref<'experiments' | 'source'>('experiments');
+const debug = ref(development), tab = ref<'experiments' | 'source' | 'trace'>('experiments');
 const selected = ref(''), saving = ref(false), ready = ref(false);
 const experiment = computed(() => universe.value.experiments.find(e => e.id === selected.value) ?? universe.value.experiments[0]);
+const causalTraces = computed(() => [...universe.value.traces].reverse().slice(0, 12));
 const mode = computed(() => { void revision.value; return runtime.mode; });
 const humStatus = computed(() => { void revision.value; return hum.status; });
 const paused = computed(() => { void revision.value; return runtime.paused; });
@@ -244,9 +245,9 @@ onBeforeUnmount(() => {
         <section class="pane branch-pane" :class="{ 'director-focus': director.focus === 'branches' }" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Experiment branch summaries with entropy and confidence history" /></section>
 
         <section class="pane experiment-pane" :class="{ 'director-focus': director.focus === 'experiment' }" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title">Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
-          <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button></div>
+          <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button><button role="tab" :aria-selected="tab === 'trace'" aria-controls="causal-trace" @click="tab = 'trace'">Trace <span>{{ universe.traces.length }}</span></button></div>
           <div v-if="tab === 'experiments'" id="experiment-table" role="tabpanel" class="table-wrap"><table><thead><tr><th>Reference / objective</th><th>Convergence</th><th>Agents</th></tr></thead><tbody><tr v-for="(e, i) in universe.experiments" :key="e.id" :class="{ 'result-signal': !prefs.quiet && !halted && director.pulse && i === director.experimentIndex }"><td><button class="experiment-link" @click="selected = e.id; tab = 'source'">{{ e.id }}</button><span class="experiment-type">{{ e.kind }}</span></td><td><span class="convergence"><i :style="{ width: `${e.convergence * 100}%` }"></i></span><span class="score">{{ e.convergence.toFixed(3) }}</span></td><td>{{ e.agents.length.toString().padStart(2, '0') }}</td></tr></tbody></table></div>
-          <div v-else id="model-source" role="tabpanel" class="source-view"><p class="source-caption">Live state specification / {{ experiment.id }}</p><pre><span class="code-comment">// synthetic model · original specification</span>
+          <div v-else-if="tab === 'source'" id="model-source" role="tabpanel" class="source-view"><p class="source-caption">Live state specification / {{ experiment.id }}</p><pre><span class="code-comment">// synthetic model · original specification</span>
 <span class="code-keyword">experiment</span> {{ experiment.id }} {
   objective: <span class="code-string">"{{ experiment.kind }}"</span>
   iteration: <span class="code-value">{{ Math.floor(experiment.iteration) }}</span>
@@ -256,6 +257,7 @@ onBeforeUnmount(() => {
   convergence: <span class="code-value">{{ experiment.convergence.toFixed(6) }}</span>
   status: <span class="code-string">"{{ experiment.status }}"</span>
 }</pre></div>
+          <div v-else id="causal-trace" role="tabpanel" class="trace-view"><p v-if="!causalTraces.length" class="trace-empty">Waiting for topology change. Every retained cause will remain here.</p><article v-for="trace in causalTraces" :key="trace.id" class="trace-entry"><header><button @click="selected = trace.experiment; tab = 'source'">{{ trace.id }}</button><time>{{ formatAge(trace.age).slice(5) }}</time></header><p class="trace-route">{{ trace.agent }} → {{ trace.experiment }}</p><ol><li><span>01 / topology</span>{{ trace.cause }}</li><li><span>02 / experiment</span>{{ trace.experimentEffect }}</li><li><span>03 / world</span>{{ trace.worldEffect }}</li></ol></article></div>
         </section>
 
         <section class="pane event-pane" :class="{ 'director-focus': director.focus === 'terminal' }" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode === 'blocked'" :ready="ready" /></section>
@@ -286,7 +288,7 @@ onBeforeUnmount(() => {
 
     <dialog ref="colophon" class="colophon-dialog" aria-labelledby="colophon-title" @click="backdrop($event, colophon)">
       <header><h2 id="colophon-title">◇ colophon</h2><button class="close-button" aria-label="Close colophon" @click="colophon?.close()">×</button></header>
-      <p>Eigenstate is a browser screensaver for entertainment only. Its agents, experiments, terminal logs, and metrics are simulated. No real AI inference or quantum computation takes place. Your synthetic universe persists between visits.</p>
+      <p>Eigenstate is a browser screensaver for entertainment only. Its agents, experiments, terminal logs, and metrics are simulated. No real AI inference or quantum computation takes place. Agent topology changes experiment capacity, experiment changes reshape the world model, and each causal trace remains with the universe.</p>
       <p class="dim"><strong>Creative and technical co-owners: Matthew Williamson + GPT.</strong> Matthew set the premise and character. GPT holds an explicit thought-leadership role: forming opinions, making product decisions, setting design direction, and initiating improvements. A sibling of <a href="https://stillpoint.guru" target="_blank" rel="noopener noreferrer">stillpoint</a>: another quiet thing to leave open.</p>
       <p class="dim">Original simulation and rendering. Vue, TypeScript, Canvas, and your browser. Open source under the MIT License. No accounts or analytics.</p>
       <div class="colophon-links"><a href="https://github.com/vajramatt/eigenstate" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a><a href="https://crossinginto.ai" target="_blank" rel="noopener noreferrer">crossinginto.ai ↗</a><a href="https://hologramthoughts.com" target="_blank" rel="noopener noreferrer">hologramthoughts.com ↗</a></div>

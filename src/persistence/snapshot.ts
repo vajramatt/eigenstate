@@ -2,7 +2,7 @@
 import type { Snapshot } from '../core/types.ts';
 import { KINDS, LIMITS } from '../core/types.ts';
 
-export const VERSION = 2;
+export const VERSION = 3;
 export const MAX_BYTES = 2_000_000;
 export interface Envelope { version: number; payload: string; checksum: string }
 export class FutureVersionError extends Error { constructor() { super('This universe was saved by a newer Eigenstate. Update the app to open it. Your saved state was preserved.'); } }
@@ -33,7 +33,7 @@ export function validateSnapshot(value: unknown): asserts value is Snapshot {
   requireValue(num(u.seed, 0, 0xffffffff) && Number.isInteger(u.seed) && num(u.rng, 0, 0xffffffff) && Number.isInteger(u.rng), 'PRNG state');
   requireValue(num(s.savedAt, 0, 8.64e15) && num(s.anomalyRate, 0, 60) && num(u.createdAt, 0, 8.64e15) && num(u.age, 0, 1e15) && num(u.epoch) && num(u.serial) && num(u.sequence), 'clocks and counters');
   requireValue(array(u.agents, 1, LIMITS.agents) && array(u.experiments, 7), 'entity bounds');
-  requireValue(array(u.events, 0, LIMITS.events) && array(u.anomalies, 0, LIMITS.anomalies) && array(u.history, 0, LIMITS.history), 'history bounds');
+  requireValue(array(u.events, 0, LIMITS.events) && array(u.anomalies, 0, LIMITS.anomalies) && array(u.history, 0, LIMITS.history) && array(u.traces, 0, LIMITS.traces), 'history bounds');
   const agents = new Set(u.agents.map(a => a.id)), experiments = new Set(u.experiments.map(e => e.id));
   requireValue(agents.size === u.agents.length && experiments.size === 7, 'duplicate identities');
   for (const a of u.agents) {
@@ -59,6 +59,7 @@ export function validateSnapshot(value: unknown): asserts value is Snapshot {
   requireValue(array(u.world.coupling, 64) && u.world.coupling.every(unit), 'coupling');
   for (const key of ['spawned', 'retired', 'converged', 'failed', 'anomalies'] as const) requireValue(num(u.totals[key]), 'totals');
   for (const e of [...u.events, ...u.anomalies]) requireValue(num(e.seq, 0, u.sequence) && num(e.age, 0, u.age) && str(e.kind) && str(e.subject) && typeof e.message === 'string' && e.message.length <= 512, 'event');
+  for (const trace of u.traces) requireValue(str(trace.id) && num(trace.age, 0, u.age) && num(trace.eventSeq, 0, u.sequence) && str(trace.agent) && str(trace.experiment) && typeof trace.cause === 'string' && trace.cause.length <= 512 && typeof trace.experimentEffect === 'string' && trace.experimentEffect.length <= 512 && typeof trace.worldEffect === 'string' && trace.worldEffect.length <= 512, 'causal trace');
   for (const h of u.history) requireValue(num(h.age, 0, u.age) && unit(h.entropy) && unit(h.confidence) && unit(h.load), 'history');
 }
 async function digest(payload: string): Promise<string> {
@@ -80,7 +81,8 @@ export async function decodeSnapshot(raw: unknown): Promise<Snapshot> {
   requireValue(typeof envelope.checksum === 'string' && await digest(envelope.payload) === envelope.checksum, 'checksum');
   let parsed = JSON.parse(envelope.payload);
   if (envelope.version === 1) parsed = { universe: parsed.universe, savedAt: parsed.lastSavedAt, anomalyRate: 0.35 };
-  else requireValue(envelope.version === VERSION, 'unsupported historical version');
+  else requireValue(envelope.version === 2 || envelope.version === VERSION, 'unsupported historical version');
+  parsed.universe.traces ??= [];
   validateSnapshot(parsed);
   return parsed;
 }

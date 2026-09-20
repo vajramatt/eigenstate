@@ -18,3 +18,10 @@ test('recent anomalies and imminent crashes override normal visual cadence', () 
   const hush = directUniverse(universe, { frequency: 'rare', remaining: 10 });
   assert.equal(hush.phase, 'hush'); assert.ok(hush.tempo < 0.25);
 });
+test('fresh causal traces direct attention from experiment to world to terminal', () => {
+  const universe = createUniverse(42), experiment = universe.experiments[2];
+  universe.age = 100; universe.traces.push({ id: 'TRC-000001', age: 99, eventSeq: 1, agent: universe.agents[0].id, experiment: experiment.id, cause: 'topology', experimentEffect: 'capacity', worldEffect: 'displacement' });
+  let state = directUniverse(universe); assert.equal(state.focus, 'experiment'); assert.equal(state.experimentIndex, 2);
+  universe.age = 103; state = directUniverse(universe); assert.equal(state.focus, 'world');
+  universe.age = 106; state = directUniverse(universe); assert.equal(state.focus, 'terminal');
+});

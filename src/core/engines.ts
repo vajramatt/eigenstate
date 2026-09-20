@@ -35,15 +35,16 @@ export function experimentEngine(u: Universe, dt: number): void {
       const old = e.id; e = experiment(u, e.kind); u.experiments[i] = e;
       for (const a of u.agents) if (a.experiment === old) { a.experiment = e.id; a.objective = e.kind; }
     }
-    e.iteration = count(e.iteration + dt * 12);
+    const capacity = e.agents.reduce((sum, id) => sum + (u.agents.find(a => a.id === id)?.status === 'active' ? 1 : 0.35), 0);
+    e.iteration = count(e.iteration + dt * (8 + capacity));
     e.branches = count(e.branches + dt * e.allocation * 550);
-    e.convergence = 1 - (1 - e.convergence) * Math.exp(-dt * 0.000012 * (1 + e.agents.length));
+    e.convergence = 1 - (1 - e.convergence) * Math.exp(-dt * 0.000012 * (1 + capacity));
     e.uncertainty = 1 - e.convergence;
     if (e.convergence > 0.985) { e.status = 'converged'; u.totals.converged++; event(u, 'result', e.id, `${e.kind} converged; result accepted`); }
     else if (random(u) < 1 - Math.exp(-dt / 300000)) { e.status = 'failed'; u.totals.failed++; event(u, 'result', e.id, 'Hypothesis rejected; resources released'); }
   }
   linkAgents(u);
-  const weights = u.experiments.map(e => 0.3 + e.uncertainty + e.agents.length * 0.1);
+  const weights = u.experiments.map(e => 0.3 + e.uncertainty + e.agents.reduce((sum, id) => sum + (u.agents.find(a => a.id === id)?.status === 'active' ? 0.1 : 0.035), 0));
   const total = weights.reduce((a, b) => a + b);
   u.experiments.forEach((e, i) => e.allocation = weights[i] / total);
 }
