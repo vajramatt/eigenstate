@@ -5,6 +5,9 @@ export class AmbientHum {
   private master?: GainNode;
   private filter?: BiquadFilterNode;
   private breathLfo?: OscillatorNode;
+  private binauralGain?: GainNode;
+  binauralEnabled = false;
+  binauralIntensity = 0.35;
   private stopTimer?: ReturnType<typeof setTimeout>;
   private nodes: AudioNode[] = [];
   private activity = 0.22;
@@ -24,6 +27,16 @@ export class AmbientHum {
     if (!this.context) {
       this.context = new AudioContext();
       this.master = this.context.createGain(); this.master.gain.value = 0; this.master.connect(this.context.destination);
+      // Stable, isolated carriers bypass ambient panning, detune, and echoes.
+      // Their shared bus still passes through master mute and lifecycle control.
+      this.binauralGain = this.context.createGain(); this.binauralGain.gain.value = 0;
+      this.binauralGain.connect(this.master); this.nodes.push(this.binauralGain);
+      for (const [frequency, position] of [[110, -1], [116, 1]]) {
+        const tone = this.context.createOscillator(), pan = this.context.createStereoPanner();
+        tone.type = 'sine'; tone.frequency.value = frequency; pan.pan.value = position;
+        tone.connect(pan); pan.connect(this.binauralGain); tone.start(); this.nodes.push(tone, pan);
+      }
+      this.updateBinaural();
       const breath = this.context.createGain(); breath.gain.value = 0.78; breath.connect(this.master);
       const lfo = this.context.createOscillator(), depth = this.context.createGain();
       lfo.type = 'sine'; lfo.frequency.value = 0.09; depth.gain.value = 0.22;
@@ -70,6 +83,15 @@ export class AmbientHum {
     await this.sync(this.active);
   }
   setVolume(volume: number): void { this.volume = Math.min(1, Math.max(0, volume)); this.setGain(); }
+  setBinaural(enabled: boolean): void { this.binauralEnabled = enabled; this.updateBinaural(); }
+  setBinauralIntensity(intensity: number): void {
+    if (!Number.isFinite(intensity)) return;
+    this.binauralIntensity = Math.min(1, Math.max(0, intensity)); this.updateBinaural();
+  }
+  private updateBinaural(): void {
+    if (!this.context || !this.binauralGain) return;
+    this.binauralGain.gain.setTargetAtTime(this.binauralEnabled ? this.binauralIntensity * 0.18 : 0, this.context.currentTime, 0.6);
+  }
   setActivity(activity: number): void {
     this.activity = Math.min(1, Math.max(0, activity));
     if (!this.context) return;
@@ -98,6 +120,6 @@ export class AmbientHum {
   async destroy(): Promise<void> {
     clearTimeout(this.stopTimer);
     for (const node of this.nodes) { if (node instanceof OscillatorNode) node.stop(); node.disconnect(); }
-    this.nodes = []; await this.context?.close(); this.context = undefined; this.master = undefined; this.filter = undefined; this.breathLfo = undefined;
+    this.nodes = []; await this.context?.close(); this.context = undefined; this.master = undefined; this.filter = undefined; this.breathLfo = undefined; this.binauralGain = undefined;
   }
 }

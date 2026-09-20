@@ -1,10 +1,39 @@
+<p align="center">
+  <a href="https://screensaver.crossinginto.ai"><img src="public/og-image.png" alt="Eigenstate: a persistent synthetic universe" width="960"></a>
+</p>
+
+<p align="center">
+  <a href="https://screensaver.crossinginto.ai"><strong>Enter Eigenstate</strong></a> ·
+  <a href="#sound">Sound</a> · <a href="#controls">Controls</a> ·
+  <a href="#run-locally">Run locally</a> · <a href="#privacy">Privacy</a>
+</p>
+
 # Eigenstate
 
-[Open Eigenstate](https://screensaver.crossinginto.ai) · [Source on GitHub](https://github.com/vajramatt/eigenstate)
-
-A persistent generative observatory inspired by scientific computing interfaces, frontier AI systems, and quantum research environments. Open it, enter fullscreen, and watch a synthetic universe evolve. Agent topology changes experiment capacity; experiments reshape the world model; bounded causal traces preserve what happened. Between visits, it resumes with the same identity and a reconciled history. Occasional simulated crashes archive that universe and begin a new one.
+A browser screensaver with a memory. Open it, enter fullscreen, and watch a synthetic universe evolve. Agents reorganize, experiments change, and the world model shifts in response. Topology changes leave a trace. Close the tab and return later: the universe resumes with its identity intact and elapsed time reconciled.
 
 Eigenstate is a browser screensaver for entertainment only. All agents, terminal logs, and metrics are simulated. It performs no real AI inference or quantum computation. The numbers describe its own synthetic simulation; they are not measurements of your computer or private reasoning traces.
+
+## Inside the observatory
+
+| View | What happens |
+| --- | --- |
+| World model | 144 latent vectors orbit within instrument rings; experiment changes light up their associated points. |
+| Agent topology | Dependency links carry signals. Confidence rings and causal highlights show which agents changed. |
+| Branch exploration | Seven experiment paths carry packets, weighted by compute allocation. Entropy and confidence retain their history. |
+| Quantum state | Eight synthetic basis phases move around a projection beside their probabilities. |
+| Inference | Layer activations, token counts, throughput, and routing evolve with the universe. |
+| Experiment registry | Convergence, assignments, model specifications, and up to 48 retained causal traces share one state. |
+| Runtime terminal | Subsystem readings stream into a bounded log, with occasional typewriter reveals. |
+
+```mermaid
+flowchart LR
+    A[Agent topology shifts] --> B[Experiment changes]
+    B --> C[World model reorganizes]
+    C --> D[Trace remains]
+```
+
+Press **F** for fullscreen, **T** to find your palette, and **D** for sound. Settings offers quiet updates and optional simulated crashes that archive one universe before starting another.
 
 ## Run locally
 
@@ -43,13 +72,36 @@ Controls remain available by mouse and touch. Shortcuts do not intercept typing,
 
 Settings include layout, anomaly frequency, simulated crashes, quiet updates, optional screen wake lock, and universe export/import. Development builds also offer 1×, 10×, 100×, and 1000× speed, pause/resume, manual anomalies, and a crash preview that leaves the current universe intact. Acceleration applies to the visible session and resets to 1× on reload.
 
-The hum is synthesized from three sine oscillators at 55, 110.06, and 165 Hz, with a low-pass filter and volume control. A slow modulation adds gentle volume swells about every eleven seconds. Its default volume is 35%; the control reports whether audio is playing, paused, muted, or blocked. It starts off on every visit and requires a user gesture. Pausing or hiding the page suspends audio. There are no audio recordings or remote samples.
+## Sound
+
+Seven synthesized voices form a low foundation with a minor chord above it. Independent swells, slight pitch drift, and slow stereo movement keep the harmonics moving. Two quiet reflections add space. Simulation activity gently changes the filter, breathing rate, and level.
+
+Sound starts off on every visit. Press **D** or enable **Settings → Ambient hum**, then adjust the volume. The default is 35%. Pausing or hiding the page suspends audio; the control reports playing, paused, muted, or blocked. Everything comes from Web Audio oscillators on your device, without recordings, remote samples, or microphone access.
+
+### Binaural depth
+
+With stereo headphones, enable **Settings → Binaural depth** to add a steady tone to each ear beneath the ambient layers:
+
+| Left ear | Right ear | Frequency difference |
+| :---: | :---: | :---: |
+| 110 Hz | 116 Hz | 6 Hz |
+
+The pair stays separate from the ambient panning, pitch drift, and echoes. Its intensity control sets the blend; hum volume, mute, pause, and hidden-page suspension still govern all sound. Both audio and binaural depth start off each visit, and their controls apply to the current session.
+
+Use stereo headphones with mono audio disabled to preserve the separate signals. This is sound design for entertainment, with no claims of therapeutic effects or brain synchronization. Eigenstate is not affiliated with Hemi-Sync®.
 
 ## Themes
 
 Eigenstate, Tokyo Night, Synthwave '84, Nord, and Catppuccin Mocha are available through the theme menu or `T`. Text, graphs, matrices, controls, and browser chrome use a shared palette registry. Themes change color without changing simulation state. No theme adds scanlines, CRT distortion, or phosphor glow.
 
 Add a theme to `src/rendering/themes.ts`. Keep text readable against both panel and background colors, and include attribution for any adapted palette in `THIRD_PARTY_NOTICES.md`.
+
+## Under the hood
+
+Vue 3 · TypeScript · Canvas 2D · IndexedDB · Web Audio · Cloudflare Static Assets
+
+<details>
+<summary><strong>Architecture, persistence, simulated crashes, and recovery</strong></summary>
 
 ## Architecture
 
@@ -67,7 +119,7 @@ src/persistence/
   snapshot.ts        validation, SHA-256 envelope, version migration
   store.ts           transactional IndexedDB storage and recovery
 src/rendering/       Canvas projections and theme tokens
-src/audio/           opt-in synthesized hum
+src/audio/           ambient synthesis and optional isolated binaural tones
 src/components/     cached, independently refreshed canvas panes
 src/App.vue          observatory, preferences, colophon, controls
 scripts/build-sw.mjs versioned offline asset cache
@@ -115,6 +167,8 @@ Use **Settings → Export universe** to download a checksummed JSON snapshot. Im
 
 An installed browser app can be removed through the browser's app-management interface. To remove saved state and the offline shell, clear site data for Eigenstate's exact origin. Uninstalling an app shortcut alone may leave that data in the browser. Eigenstate is an ambient fullscreen website; it does not register as a macOS screensaver or replace your lock screen.
 
+</details>
+
 ## Cloudflare and Crossing Into
 
 The included `wrangler.jsonc` serves `dist/` through Cloudflare Workers Static Assets with no backend. Matthew's configured custom domain is `screensaver.crossinginto.ai`. Change or remove the route before deploying your own copy.
@@ -134,9 +188,11 @@ Simulation and sound run on your device. Eigenstate has no accounts, analytics, 
 
 The browser requests this site's static assets and checks its service worker for updates. Ordinary hosting access logs may exist at the hosting provider. Once the production shell is cached, the app can reopen offline. External links navigate only when selected. The app bundles its code and uses system fonts.
 
-## Screenshots
+## Colophon
 
-Screenshots of the original Eigenstate UI can be added here before release. Capture the default theme and at least one alternate theme at desktop size. Do not add third-party film or television assets.
+Created by Matthew Williamson and GPT. Matthew sets the direction; GPT shares creative and technical decisions across the simulation, interface, sound, and implementation. The working agreement lives in [AGENTS.md](AGENTS.md); copyright and repository ownership remain with Matthew.
+
+Part of [Crossing Into](https://crossinginto.ai). Open the in-app colophon with **~**. The banner above is promotional artwork; the live observatory renders its own simulation in Canvas.
 
 ## License
 

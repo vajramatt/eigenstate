@@ -18,6 +18,7 @@ const runtime = new UniverseRuntime();
 const hum = new AmbientHum();
 const appVersion = __APP_VERSION__;
 const humOn = ref(false), humVolume = ref(35);
+const binauralOn = ref(false), binauralIntensity = ref(35);
 const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>(), privacy = ref<HTMLDialogElement>();
 const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
 const prefs = ref<Preferences>({ theme: 'eigenstate', layout: 'adaptive', quiet: false });
@@ -275,6 +276,12 @@ onBeforeUnmount(() => {
         <div class="setting-row"><label for="layout">Pane layout</label><select id="layout" v-model="prefs.layout" @change="savePrefs"><option value="adaptive">Universe seed</option><option value="observatory">Observatory</option><option value="analysis">Analysis</option></select></div>
         <label class="setting-row"><span>Quiet updates<small>Refresh visualizations less often. Respects reduced motion.</small></span><input type="checkbox" v-model="prefs.quiet" @change="savePrefs" /></label>
         <label class="setting-row"><span>Ambient hum<small>Soft, locally generated sound. Off when you arrive. {{ humOn ? `Audio: ${humStatus}.` : '' }}</small></span><input type="checkbox" :checked="humOn" @change="toggleHum" /></label><label v-if="humOn" class="setting-row"><span>Hum volume <small>{{ humVolume }}%</small></span><input aria-label="Hum volume" type="range" min="0" max="100" v-model.number="humVolume" @input="hum.setVolume(humVolume / 100)" /></label>
+        <section class="binaural-settings" aria-labelledby="binaural-title">
+          <label class="setting-row"><span id="binaural-title">Binaural depth<small>Use stereo headphones. Enable ambient hum to listen.</small></span><input type="checkbox" v-model="binauralOn" @change="hum.setBinaural(binauralOn)" /></label>
+          <div class="binaural-frequencies" aria-label="110 hertz left ear, 116 hertz right ear, 6 hertz difference"><span><small>LEFT</small>110 <em>Hz</em></span><span class="binaural-difference">Δ 6 Hz</span><span><small>RIGHT</small>116 <em>Hz</em></span></div>
+          <label v-if="binauralOn" class="setting-row"><span>Binaural intensity<small>{{ binauralIntensity }}% · follows hum volume and pause</small></span><input aria-label="Binaural intensity" type="range" min="0" max="100" v-model.number="binauralIntensity" @input="hum.setBinauralIntensity(binauralIntensity / 100)" /></label>
+          <p>Two steady tones beneath the ambient soundscape. Sound design for entertainment; no therapeutic or brain synchronization claims. Off on each visit.</p>
+        </section>
         <label class="setting-row"><span>Keep screen awake<small>{{ wakeHeld ? 'Active while this page stays visible.' : 'Optional. Your browser may release this request.' }}</small></span><input type="checkbox" v-model="wakeRequested" @change="requestWake" /></label>
         <div class="setting-row"><label for="anomaly-rate">Anomaly frequency<small>Per hour of simulation time</small></label><select id="anomaly-rate" :value="runtime.snapshot.anomalyRate" :disabled="!canMutate" @change="runtime.snapshot.anomalyRate = Number(($event.target as HTMLSelectElement).value); runtime.checkpoint()"><option :value="0">Off</option><option :value="0.35">Rare · 0.35 / hour</option><option :value="2">Occasional · 2 / hour</option><option :value="6">Frequent · 6 / hour</option></select></div>
         <div class="setting-row"><label for="crash-frequency">Simulated universe crashes<small>Full-screen fault, then a fresh universe. Counts active viewing only.</small></label><select id="crash-frequency" :value="runtime.snapshot.crashSchedule?.frequency ?? 'rare'" :disabled="!canMutate" @change="runtime.setCrashFrequency(($event.target as HTMLSelectElement).value)"><option value="off">Off</option><option value="rare">Rare · 45–90 min</option><option value="occasional">Occasional · 10–20 min</option></select></div>

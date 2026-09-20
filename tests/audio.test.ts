@@ -38,6 +38,19 @@ test('hum creates audio only on request and reports pause, mute, and playing sta
   });
   assert.equal(hum.status, 'off'); await hum.setEnabled(true);
   assert.equal(hum.status, 'playing'); assert.ok(Context.last.gains[0].gain.target > 0);
+  const carriers = [110, 116].map(f => Context.last.oscillators.find(o => o.frequency.value === f)!);
+  const channels = carriers.map(o => o.connections[0] as Node & { pan: Param });
+  assert.deepEqual(channels.map(p => p.pan.value), [-1, 1], 'carriers must remain isolated to opposite ears');
+  const binaural = channels[0].connections[0] as Node & { gain: Param };
+  assert.equal(channels[1].connections[0], binaural);
+  assert.equal(binaural.gain.target, 0, 'binaural layer starts silent');
+  assert.deepEqual(binaural.connections, [Context.last.gains[0]], 'carriers bypass echo and modulation but obey master volume');
+  hum.setBinaural(true); assert.ok(binaural.gain.target > 0);
+  hum.setBinauralIntensity(0); assert.equal(binaural.gain.target, 0);
+  hum.setBinauralIntensity(2); assert.equal(binaural.gain.target, 0.18);
+  hum.setBinauralIntensity(NaN); assert.equal(binaural.gain.target, 0.18);
+  hum.setBinaural(false); assert.equal(binaural.gain.target, 0);
+  hum.setBinaural(true);
   const lfo = Context.last.oscillators.find(o => o.frequency.value < 1)!;
   const depth = lfo.connections[0] as Node & { gain: Param };
   const breath = Context.last.gains.find(g => depth.connections.includes(g.gain))!;
@@ -53,6 +66,7 @@ test('hum creates audio only on request and reports pause, mute, and playing sta
   assert.equal(Context.last.oscillators.length, count, 'repeated enable must not duplicate voices');
   hum.setActivity(0); const quietGain = Context.last.gains[0].gain.target;
   hum.setActivity(1); assert.ok(Context.last.gains[0].gain.target > quietGain, 'simulation activity should subtly raise the hum');
+  assert.deepEqual(carriers.map(o => o.frequency.value), [110, 116], 'activity must not change the binaural difference');
   await hum.sync(false); assert.equal(hum.status, 'paused'); assert.equal(Context.last.gains[0].gain.target, 0);
   await hum.sync(true); assert.equal(hum.status, 'playing');
   hum.setVolume(0); assert.equal(hum.status, 'muted'); assert.equal(Context.last.gains[0].gain.target, 0);
