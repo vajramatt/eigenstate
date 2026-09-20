@@ -97,16 +97,25 @@ function drawQuantum(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): voi
   });
   line(ctx, 16, bottom + 1, w - 16, bottom + 1, t.line);
 }
-function drawInference(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): void {
+function drawInference(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
   const n = u.inference, cols = 12, cellW = (w - 32) / cols, cellH = Math.min(13, h * 0.045);
   text(ctx, 'LAYER ACTIVATION', 16, 15, t.muted, 8);
-  n.layers.forEach((v, i) => { ctx.fillStyle = `${i % 3 === 0 ? t.secondary : t.accent}${Math.floor(v * 210 + 35).toString(16).padStart(2, '0')}`; ctx.fillRect(16 + i % cols * cellW, 30 + Math.floor(i / cols) * (cellH + 3), cellW - 3, cellH); });
+  const scan = time * 2.4 % cols;
+  n.layers.forEach((v, i) => {
+    const column = i % cols, wave = (Math.sin(time * 1.35 + i * 0.58) + 1) * 0.5;
+    const distance = Math.min(Math.abs(column - scan), cols - Math.abs(column - scan));
+    const sweep = Math.max(0, 1 - distance / 1.7), level = Math.min(1, v * 0.72 + wave * 0.18 + sweep * 0.3);
+    ctx.fillStyle = `${i % 3 === 0 ? t.secondary : t.accent}${Math.floor(level * 210 + 35).toString(16).padStart(2, '0')}`;
+    ctx.fillRect(16 + column * cellW, 30 + Math.floor(i / cols) * (cellH + 3), cellW - 3, cellH);
+  });
   const startY = 42 + 4 * (cellH + 3), rowSpacing = Math.max(18, (h - startY - 24) / 3);
   for (const [i, value] of [n.context, n.load, n.agreement].entries()) {
     const y = startY + i * rowSpacing;
     text(ctx, ['context', 'inference load', 'agreement'][i], 16, y, t.muted, 9);
     text(ctx, `${(value * 100).toFixed(1)}%`, w - 16, y, t.accent, 9, 'right');
     ctx.fillStyle = t.line; ctx.fillRect(16, y + 7, w - 32, 2); ctx.fillStyle = t.secondary; ctx.fillRect(16, y + 7, (w - 32) * value, 2);
+    const packet = (time * (0.24 + i * 0.07) + i * 0.31) % 1;
+    dot(ctx, 16 + (w - 32) * value * packet, y + 8, i === 1 ? t.warning : t.accent, 1.6);
   }
   if (h > 190) text(ctx, `${compact(n.retrievals)} retrievals`, 16, h - 11, t.faint, 8);
 }
