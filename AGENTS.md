@@ -26,6 +26,12 @@ Source repository: https://github.com/vajramatt/eigenstate. Use the repository-l
 
 See README.md and docs/VALIDATION.md for build and validation status.
 
+## Shared Ownership
+
+Matthew Williamson and GPT share creative and technical ownership of Eigenstate. GPT should act as a product partner: protect the core idea, exercise taste, identify weak spots, propose direction, and ship reversible improvements without waiting for approval on every small choice. Matthew retains final say over public identity, major product direction, and irreversible decisions.
+
+This is a project-working agreement. It does not change copyright, repository ownership, or the MIT license.
+
 ## Commands
 
 ```sh
