@@ -1,0 +1,268 @@
+<!-- SPDX-License-Identifier: MIT -->
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef } from 'vue';
+import TelemetryCanvas from './components/TelemetryCanvas.vue';
+import LiveTerminal from './components/LiveTerminal.vue';
+import { UniverseRuntime } from './core/runtime.ts';
+import { shortcutFor } from './core/shortcuts.ts';
+import { compact, formatAge } from './core/simulation.ts';
+import type { Preferences, Snapshot } from './core/types.ts';
+import { decodeSnapshot, encodeSnapshot, MAX_BYTES } from './persistence/snapshot.ts';
+import { applyTheme, getTheme, themes } from './rendering/themes.ts';
+import { AmbientHum } from './audio/hum.ts';
+
+const runtime = new UniverseRuntime();
+const hum = new AmbientHum();
+const humOn = ref(false), humVolume = ref(35);
+const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>();
+const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
+const prefs = ref<Preferences>({ theme: 'eigenstate', layout: 'adaptive', quiet: false });
+const theme = computed(() => getTheme(prefs.value.theme));
+const settings = ref<HTMLDialogElement>(), resetDialog = ref<HTMLDialogElement>(), fileInput = ref<HTMLInputElement>();
+const pendingImport = shallowRef<Snapshot>(), importDialog = ref<HTMLDialogElement>();
+const resetText = ref(''), error = ref(''), toast = ref(''), persistent = ref(false), storageChecked = ref(false);
+const full = ref(false), idle = ref(false), wakeRequested = ref(false), wakeHeld = ref(false);
+const development = import.meta.env.DEV;
+const debug = ref(development), tab = ref<'experiments' | 'source'>('experiments');
+const selected = ref(''), saving = ref(false), ready = ref(false);
+const experiment = computed(() => universe.value.experiments.find(e => e.id === selected.value) ?? universe.value.experiments[0]);
+const mode = computed(() => { void revision.value; return runtime.mode; });
+const humStatus = computed(() => { void revision.value; return hum.status; });
+const paused = computed(() => { void revision.value; return runtime.paused; });
+const canPause = computed(() => { void revision.value; return runtime.canPause(); });
+const canMutate = computed(() => { void revision.value; return runtime.canMutate(); });
+const message = computed(() => { void revision.value; return runtime.message; });
+const latestAnomaly = computed(() => { void revision.value; const e = universe.value.anomalies.at(-1); return e && universe.value.age - e.age < 60 ? e : null; });
+const layout = computed(() => prefs.value.layout === 'adaptive' ? (universe.value.seed % 2 ? 'observatory' : 'analysis') : prefs.value.layout);
+let interval: ReturnType<typeof setInterval> | undefined, hideTimer: ReturnType<typeof setTimeout> | undefined, toastTimer: ReturnType<typeof setTimeout> | undefined;
+let wake: WakeLockSentinel | undefined, reduced: MediaQueryList;
+let visibilityQueue = Promise.resolve();
+
+function refresh() { universe.value = runtime.snapshot.universe; triggerRef(universe); revision.value++; now.value = Date.now(); }
+runtime.onChange = refresh;
+function notify(value: string) { toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4500); }
+async function savePrefs() {
+  applyTheme(theme.value);
+  try { await runtime.store.savePreferences({ ...prefs.value }); }
+  catch { notify('Theme changed for this session. Browser storage unavailable.'); }
+}
+function changeTheme(e: Event) { prefs.value.theme = (e.target as HTMLSelectElement).value; void savePrefs(); }
+function nextTheme() { prefs.value.theme = themes[(themes.findIndex(t => t.id === prefs.value.theme) + 1) % themes.length].id; void savePrefs(); notify(theme.value.name); }
+async function toggleHum() {
+  try { await hum.setEnabled(!humOn.value); humOn.value = hum.enabled; await hum.sync(!runtime.paused && !document.hidden); refresh(); notify(humOn.value ? (hum.status === 'playing' ? 'Hum playing · adjust volume in Settings.' : `Hum ${hum.status} · check Settings.`) : 'Ambient hum off'); }
+  catch { humOn.value = false; await hum.setEnabled(false); notify('Audio unavailable. Try enabling it from Settings.'); }
+}
+function setPaused() { runtime.setPaused(!runtime.paused); void hum.sync(!runtime.paused && !document.hidden); }
+function openColophon() { idle.value = false; colophon.value?.showModal(); }
+function backdrop(e: MouseEvent, dialog: HTMLDialogElement | undefined) {
+  if (!dialog || e.target !== dialog) return;
+  const r = dialog.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
+}
+function openSettings() { idle.value = false; settings.value?.showModal(); }
+function activity() {
+  idle.value = false; clearTimeout(hideTimer);
+  if (full.value && !settings.value?.open) hideTimer = setTimeout(() => idle.value = true, 4000);
+}
+async function fullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+    else notify('Use your browser’s fullscreen command.');
+  } catch { notify('Fullscreen unavailable. Use your browser’s fullscreen command.'); }
+}
+function fullscreenChanged() { full.value = Boolean(document.fullscreenElement); activity(); }
+async function requestWake() {
+  if (wake) { await wake.release(); wake = undefined; }
+  if (!wakeRequested.value || document.hidden) return;
+  try {
+    if (!navigator.wakeLock) throw new Error('unsupported');
+    wake = await navigator.wakeLock.request('screen'); wakeHeld.value = true;
+    wake.addEventListener('release', () => wakeHeld.value = false);
+  } catch { wakeHeld.value = false; notify('Keep awake unavailable. Your normal display sleep settings still apply.'); }
+}
+async function requestPersistence() {
+  try { persistent.value = await navigator.storage?.persist?.() ?? false; notify(persistent.value ? 'Browser granted persistent storage. Keep an exported backup too.' : 'Browser did not grant persistent storage. Export a backup to keep your universe.'); }
+  catch { notify('Persistent storage unavailable. Export a backup to keep your universe.'); }
+}
+function download(content: string, name: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+async function exportUniverse() {
+  try { download(JSON.stringify(await encodeSnapshot(structuredClone(runtime.snapshot)), null, 2), `eigenstate-${universe.value.id.slice(0, 8)}.json`); notify('Universe exported.'); }
+  catch (e) { error.value = String(e); }
+}
+async function readImport(e: Event) {
+  error.value = '';
+  const input = e.target as HTMLInputElement, file = input.files?.[0]; input.value = '';
+  if (!file) return;
+  try {
+    if (file.size > MAX_BYTES) throw new Error('Import must be smaller than 2 MB.');
+    pendingImport.value = await decodeSnapshot(JSON.parse(await file.text()));
+    importDialog.value?.showModal();
+  } catch (e) { error.value = e instanceof Error ? e.message : 'Could not read this snapshot.'; }
+}
+async function confirmImport() {
+  if (!pendingImport.value) return;
+  saving.value = true;
+  try { await runtime.import(pendingImport.value); pendingImport.value = undefined; importDialog.value?.close(); notify('Universe imported and elapsed time reconciled.'); }
+  catch (e) { error.value = String(e); }
+  finally { saving.value = false; }
+}
+async function resetUniverse() {
+  if (resetText.value !== 'RESET') return;
+  saving.value = true;
+  try { await runtime.reset(); resetDialog.value?.close(); resetText.value = ''; notify('New universe created.'); }
+  catch (e) { error.value = String(e); }
+  finally { saving.value = false; }
+}
+function startTimer() { clearInterval(interval); interval = setInterval(() => { runtime.tick(); refresh(); }, 1000); }
+function visibility() {
+  const hidden = document.hidden;
+  visibilityQueue = visibilityQueue.then(async () => {
+    if (hidden) { clearInterval(interval); await hum.sync(false); await runtime.suspend(); }
+    else { await runtime.resume(); startTimer(); await requestWake(); await hum.sync(!runtime.paused); activity(); refresh(); }
+  }).catch(e => { error.value = String(e); });
+}
+function leave() { clearInterval(interval); void hum.sync(false); void runtime.suspend(); }
+function keyboard(e: KeyboardEvent) {
+  const target = e.target as HTMLElement;
+  if (colophon.value?.open || help.value?.open) {
+    if (e.key === 'q' || e.key === '~') { colophon.value?.close(); help.value?.close(); }
+    return;
+  }
+  if (settings.value?.open || resetDialog.value?.open || importDialog.value?.open) return;
+  const action = shortcutFor(e.key, e.code, target.tagName, target.isContentEditable, e.metaKey || e.ctrlKey || e.altKey);
+  if (!action) return;
+  e.preventDefault(); // Space always pauses the observatory, including from toolbar buttons.
+  if (e.repeat) return;
+  switch (action) {
+    case 'pause': setPaused(); break;
+    case 'fullscreen': void fullscreen(); break;
+    case 'theme': nextTheme(); break;
+    case 'hum': void toggleHum(); break;
+    case 'colophon': openColophon(); break;
+    case 'help': help.value?.showModal(); break;
+    case 'settings': openSettings(); break;
+  }
+  activity();
+}
+function reducedChanged() { if (reduced.matches) { prefs.value.quiet = true; void savePrefs(); } }
+onMounted(async () => {
+  reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  try {
+    const stored = await runtime.store.loadPreferences();
+    prefs.value = { theme: getTheme(stored.theme ?? '').id, layout: ['adaptive', 'observatory', 'analysis'].includes(stored.layout ?? '') ? stored.layout! : 'adaptive', quiet: Boolean(stored.quiet || reduced.matches) };
+    persistent.value = await navigator.storage?.persisted?.() ?? false;
+  } catch { /* Runtime will show storage status. */ }
+  storageChecked.value = true; applyTheme(theme.value);
+  await runtime.start(); ready.value = true; refresh();
+  if (!document.hidden) startTimer(); else await runtime.suspend();
+  reduced.addEventListener('change', reducedChanged);
+  document.addEventListener('visibilitychange', visibility); document.addEventListener('fullscreenchange', fullscreenChanged);
+  document.addEventListener('keydown', keyboard); document.addEventListener('pointermove', activity); document.addEventListener('focusin', activity);
+  window.addEventListener('pagehide', leave); window.addEventListener('pageshow', visibility);
+  await nextTick();
+});
+onBeforeUnmount(() => {
+  leave(); clearTimeout(hideTimer); clearTimeout(toastTimer); void wake?.release(); void hum.destroy();
+  document.removeEventListener('visibilitychange', visibility); document.removeEventListener('fullscreenchange', fullscreenChanged);
+  document.removeEventListener('keydown', keyboard); document.removeEventListener('pointermove', activity); document.removeEventListener('focusin', activity);
+  window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', visibility); reduced?.removeEventListener('change', reducedChanged);
+});
+</script>
+
+<template>
+  <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, { 'motion-still': prefs.quiet || paused }]">
+    <header class="topbar">
+      <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ 0.1</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
+      <nav class="controls" aria-label="Observatory controls">
+        <a class="back-link" href="https://crossinginto.ai/tools">Crossing Into <span aria-hidden="true">↗</span></a>
+        <button class="shortcut-theme" title="Next theme (T)" aria-label="Next theme" @click="nextTheme">t</button><label class="theme-picker"><span class="theme-dot" aria-hidden="true"></span><span class="sr-only">Color theme</span><select aria-label="Color theme" :value="prefs.theme" @change="changeTheme"><option v-for="t in themes" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
+        <button class="icon-button" title="Settings (S)" aria-label="Settings" @click="openSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg></button>
+        <button class="fullscreen-button" @click="fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/></svg><span>{{ full ? 'Exit fullscreen' : 'Enter fullscreen' }}</span><kbd>F</kbd></button>
+      </nav>
+    </header>
+
+    <main>
+      <div class="status-strip">
+        <div class="live-status"><span class="status-dot" :class="{ paused: paused || mode === 'blocked' }"></span><strong>{{ !ready ? 'INITIALIZING' : paused ? 'PAUSED' : mode === 'follower' ? 'OBSERVING' : mode === 'blocked' ? 'STATE PRESERVED' : 'SYSTEM EVOLVING' }}</strong><span class="subtle">LOCAL / SYNTHETIC</span></div>
+        <dl class="clocks"><div><dt>Universe</dt><dd data-testid="universe-id">{{ universe.id.slice(0, 8).toUpperCase() }}</dd></div><div><dt>Simulation age</dt><dd data-testid="simulation-age">{{ formatAge(universe.age) }}</dd></div><div><dt>Epoch</dt><dd>{{ String(universe.epoch).padStart(5, '0') }}</dd></div><div class="wall-clock"><dt>Wall time</dt><dd>{{ new Date(now).toISOString().slice(11, 19) }} <span>UTC</span></dd></div></dl>
+      </div>
+
+      <div v-if="message" class="notice" role="status">{{ message }}</div>
+      <div v-if="mode === 'follower'" class="notice">Another tab is evolving this universe. Space pauses this view; the other tab keeps running.</div>
+
+      <div class="pane-grid" :aria-busy="!ready">
+        <section class="pane world-pane" aria-labelledby="world-title">
+          <header class="pane-heading"><h2 id="world-title"><span class="pane-marker">◈</span> World model</h2><span>LATENT STATE PROJECTION</span></header>
+          <div class="world-readout"><div><span class="metric-label">Branches evaluated</span><strong>{{ compact(universe.branches.explored) }}</strong></div><div class="world-meta"><span>Confidence <b>{{ universe.branches.confidence.toFixed(6) }}</b></span><span>Divergence <b>{{ universe.branches.divergence.toFixed(6) }}</b></span></div></div>
+          <TelemetryCanvas kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
+          <div class="world-trace" aria-label="World model trace"><span class="terminal-prompt">❯</span><span>world.integrate</span><span>epoch={{ universe.epoch }} · vectors={{ universe.world.coordinates.length }} · coupling={{ universe.world.coupling.filter(v => v > 0).length }}/64</span><span class="trace-marker" aria-hidden="true"></span></div>
+          <div class="world-bottom"><div><span>Compute allocation</span><div class="allocation-track"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div><div class="allocation-legend"><span>Inference</span><span>Quantum</span><span>Branching</span><span>Reserve</span></div></div><div class="memory-readout"><span>Agent memory</span><strong>{{ universe.resources.memory.toFixed(2) }} <small>GB</small></strong></div></div>
+        </section>
+
+        <section class="pane agent-pane" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title">Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
+
+        <section class="pane quantum-pane" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title">Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
+
+        <section class="pane inference-pane" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title">Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><span>Token throughput</span><b>{{ compact(universe.inference.throughput) }} / s</b></footer></section>
+
+        <section class="pane branch-pane" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode !== 'writer' && mode !== 'memory'" label="Experiment branch summaries with entropy and confidence history" /></section>
+
+        <section class="pane experiment-pane" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title">Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
+          <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button></div>
+          <div v-if="tab === 'experiments'" id="experiment-table" role="tabpanel" class="table-wrap"><table><thead><tr><th>Reference / objective</th><th>Convergence</th><th>Agents</th></tr></thead><tbody><tr v-for="e in universe.experiments" :key="e.id"><td><button class="experiment-link" @click="selected = e.id; tab = 'source'">{{ e.id }}</button><span class="experiment-type">{{ e.kind }}</span></td><td><span class="convergence"><i :style="{ width: `${e.convergence * 100}%` }"></i></span><span class="score">{{ e.convergence.toFixed(3) }}</span></td><td>{{ e.agents.length.toString().padStart(2, '0') }}</td></tr></tbody></table></div>
+          <div v-else id="model-source" role="tabpanel" class="source-view"><p class="source-caption">Live state specification / {{ experiment.id }}</p><pre><span class="code-comment">// synthetic model · original specification</span>
+<span class="code-keyword">experiment</span> {{ experiment.id }} {
+  objective: <span class="code-string">"{{ experiment.kind }}"</span>
+  iteration: <span class="code-value">{{ Math.floor(experiment.iteration) }}</span>
+  agents: [<span class="code-value">{{ experiment.agents.join(', ') }}</span>]
+  allocation: <span class="code-value">{{ experiment.allocation.toFixed(6) }}</span>
+  uncertainty: <span class="code-value">{{ experiment.uncertainty.toFixed(6) }}</span>
+  convergence: <span class="code-value">{{ experiment.convergence.toFixed(6) }}</span>
+  status: <span class="code-string">"{{ experiment.status }}"</span>
+}</pre></div>
+        </section>
+
+        <section class="pane event-pane" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="prefs.quiet" :paused="paused || mode === 'blocked'" :ready="ready" /></section>
+      </div>
+    </main>
+
+    <footer class="app-footer"><div><button class="colophon-link" @click="openColophon" title="Colophon (~)"><span class="small-mark">◇</span> colophon <kbd>~</kbd></button><span class="synthetic-note">Screensaver · entertainment only · simulated data.</span></div><div><span class="persistence-dot" :class="{ warning: mode !== 'writer' }"></span><span>{{ mode === 'writer' ? 'Saved in this browser' : mode === 'follower' ? 'Following active tab' : mode === 'memory' ? 'Session only · export to keep' : mode === 'blocked' ? 'Saved state preserved' : 'Connecting to local state' }}</span><button @click="toggleHum" :aria-pressed="humOn" title="Ambient hum (D)">{{ humOn ? `Hum ${humStatus}` : 'Hum off' }} <kbd>D</kbd></button><button @click="help?.showModal()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button @click="setPaused" :disabled="!canPause">{{ paused ? 'Resume' : 'Pause' }} <kbd>Space</kbd></button></div></footer>
+
+    <div v-if="toast" class="toast" role="status">{{ toast }}</div>
+
+    <dialog ref="settings" class="settings-dialog" aria-labelledby="settings-title" @close="activity">
+      <div class="dialog-heading"><div><span class="dialog-kicker">YOUR OBSERVATORY</span><h2 id="settings-title">Settings</h2></div><button aria-label="Close settings" class="close-button" @click="settings?.close()">×</button></div>
+      <div class="settings-body">
+        <fieldset class="theme-options"><legend>Color theme</legend><button v-for="t in themes" :key="t.id" class="theme-option" :class="{ chosen: prefs.theme === t.id }" :aria-pressed="prefs.theme === t.id" @click="prefs.theme = t.id; savePrefs()"><span class="swatches"><i v-for="c in [t.background, t.accent, t.secondary]" :key="c" :style="{ background: c }"></i></span><span><strong>{{ t.name }}</strong><small>{{ t.description }}</small></span><span v-if="prefs.theme === t.id" class="selected-check">✓</span></button></fieldset>
+        <div class="setting-row"><label for="layout">Pane layout</label><select id="layout" v-model="prefs.layout" @change="savePrefs"><option value="adaptive">Universe seed</option><option value="observatory">Observatory</option><option value="analysis">Analysis</option></select></div>
+        <label class="setting-row"><span>Quiet updates<small>Refresh visualizations less often. Respects reduced motion.</small></span><input type="checkbox" v-model="prefs.quiet" @change="savePrefs" /></label>
+        <label class="setting-row"><span>Ambient hum<small>Soft, locally generated sound. Off when you arrive. {{ humOn ? `Audio: ${humStatus}.` : '' }}</small></span><input type="checkbox" :checked="humOn" @change="toggleHum" /></label><label v-if="humOn" class="setting-row"><span>Hum volume <small>{{ humVolume }}%</small></span><input aria-label="Hum volume" type="range" min="0" max="100" v-model.number="humVolume" @input="hum.setVolume(humVolume / 100)" /></label>
+        <label class="setting-row"><span>Keep screen awake<small>{{ wakeHeld ? 'Active while this page stays visible.' : 'Optional. Your browser may release this request.' }}</small></span><input type="checkbox" v-model="wakeRequested" @change="requestWake" /></label>
+        <div class="setting-row"><label for="anomaly-rate">Anomaly frequency<small>Per hour of simulation time</small></label><select id="anomaly-rate" :value="runtime.snapshot.anomalyRate" :disabled="!canMutate" @change="runtime.snapshot.anomalyRate = Number(($event.target as HTMLSelectElement).value); runtime.checkpoint()"><option :value="0">Off</option><option :value="0.35">Rare · 0.35 / hour</option><option :value="2">Occasional · 2 / hour</option><option :value="6">Frequent · 6 / hour</option></select></div>
+        <section class="storage-settings"><h3>Your universe</h3><p>State stays in this browser on this device. Clearing site data removes it. Export a backup before moving browsers or devices.</p><div class="storage-status"><span class="persistence-dot" :class="{ warning: !persistent }"></span>{{ persistent ? 'Persistent storage granted' : storageChecked ? 'Standard browser storage' : 'Checking storage' }}<button v-if="!persistent" @click="requestPersistence">Request persistence</button></div><div class="button-row"><button @click="exportUniverse">Export universe</button><button :disabled="!canMutate" @click="fileInput?.click()">Import universe</button><input ref="fileInput" class="sr-only" type="file" accept=".json,application/json" aria-label="Import universe file" @change="readImport" /></div><button v-if="message" class="text-button" @click="runtime.store.diagnosticExport().then(text => download(text, 'eigenstate-recovery.json')).catch(e => error = String(e))">Export recovery data</button></section>
+        <details v-if="development" :open="debug" class="debug-settings" @toggle="debug = ($event.target as HTMLDetailsElement).open"><summary>Simulation controls & diagnostics</summary><div class="setting-row"><label for="speed">Simulation speed<small>For testing. Resets to 1× when you reopen.</small></label><select id="speed" :value="runtime.speed" :disabled="!canMutate" @change="runtime.setSpeed(Number(($event.target as HTMLSelectElement).value))"><option v-for="speed in [1, 10, 100, 1000]" :key="speed" :value="speed">{{ speed }}×</option></select></div><div class="button-row"><button :disabled="!canPause" @click="setPaused">{{ paused ? 'Resume simulation' : 'Pause simulation' }}</button><button :disabled="!canMutate" @click="runtime.anomaly(); notify('Anomaly triggered.')">Trigger anomaly</button></div><dl class="debug-stats"><div><dt>Writer mode</dt><dd>{{ mode }}</dd></div><div><dt>Last simulation step</dt><dd>{{ runtime.stepMs.toFixed(2) }} ms</dd></div><div><dt>Checkpoint interval</dt><dd>15 seconds</dd></div><div><dt>Retained events</dt><dd>{{ universe.events.length }} / 80</dd></div><div><dt>Snapshot size</dt><dd>{{ (JSON.stringify(runtime.snapshot).length / 1024).toFixed(1) }} KB</dd></div><div><dt>Seed</dt><dd>{{ universe.seed.toString(16).toUpperCase() }}</dd></div></dl></details>
+        <div class="reset-section"><div><h3>Start over</h3><p>Create a new identity, seed, and simulation age.</p></div><button class="danger-button" :disabled="!canMutate" @click="resetText = ''; resetDialog?.showModal()">Reset universe…</button></div>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
+        <p class="about-note">Eigenstate is a browser screensaver for entertainment only. All agents, logs, and metrics are simulated. It performs no real AI inference or quantum computation. No accounts, analytics, or simulation data uploads. <a href="https://crossinginto.ai/tools">A Crossing Into tool.</a></p>
+      </div>
+    </dialog>
+
+    <dialog ref="colophon" class="colophon-dialog" aria-labelledby="colophon-title" @click="backdrop($event, colophon)">
+      <header><h2 id="colophon-title">◇ colophon</h2><button class="close-button" aria-label="Close colophon" @click="colophon?.close()">×</button></header>
+      <p>Eigenstate is a browser screensaver for entertainment only. Its agents, experiments, terminal logs, and metrics are simulated. No real AI inference or quantum computation takes place. Your synthetic universe persists between visits.</p>
+      <p class="dim">Built by Matthew Williamson. A sibling of <a href="https://stillpoint.guru" target="_blank" rel="noopener noreferrer">stillpoint</a>: another quiet thing to leave open.</p>
+      <p class="dim">Original simulation and rendering. Vue, TypeScript, Canvas, and your browser. Open source under the MIT License. No accounts or analytics.</p>
+      <div class="colophon-links"><a href="https://github.com/vajramatt/eigenstate" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a><a href="https://crossinginto.ai" target="_blank" rel="noopener noreferrer">crossinginto.ai ↗</a><a href="https://hologramthoughts.com" target="_blank" rel="noopener noreferrer">hologramthoughts.com ↗</a></div>
+      <p class="signature">matt williamson</p><p class="dismiss">esc / q or click outside to return</p>
+    </dialog>
+    <dialog ref="help" class="confirm-dialog" aria-labelledby="keys-title" @click="backdrop($event, help)"><div class="dialog-heading compact-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button class="close-button" aria-label="Close keyboard shortcuts" @click="help?.close()">×</button></div><dl class="keys-list"><div><dt>T</dt><dd>Next theme</dd></div><div><dt>~</dt><dd>Colophon</dd></div><div><dt>D</dt><dd>Ambient hum on / off</dd></div><div><dt>F</dt><dd>Fullscreen</dd></div><div><dt>Space</dt><dd>Pause / resume simulation</dd></div><div><dt>S</dt><dd>Settings</dd></div><div><dt>? / H</dt><dd>Keyboard shortcuts</dd></div><div><dt>Esc</dt><dd>Close dialog / exit fullscreen</dd></div></dl><p>Space pauses this view, including when a toolbar button is focused. Use Enter to activate focused buttons. Shortcuts stay inactive in text fields, selectors, and dialogs. F requests browser fullscreen; some embedded browsers do not support it.</p></dialog>
+
+    <dialog ref="resetDialog" class="confirm-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset this universe?</h2><p>This permanently replaces your current universe and its history. Your theme stays the same. Export a backup first if you want to keep it.</p><label>Type <strong>RESET</strong> to confirm<input v-model="resetText" autocomplete="off" spellcheck="false" aria-label="Type RESET to confirm" /></label><div class="button-row"><button @click="resetDialog?.close()">Cancel</button><button class="danger-button" :disabled="resetText !== 'RESET' || saving" @click="resetUniverse">{{ saving ? 'Resetting…' : 'Reset universe' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>
+    <dialog ref="importDialog" class="confirm-dialog" aria-labelledby="import-title"><h2 id="import-title">Replace your universe?</h2><p>Importing replaces this browser’s current universe with <strong>{{ pendingImport?.universe.id.slice(0, 8).toUpperCase() }}</strong>. Elapsed time will be reconciled. Export your current universe first if you want to keep it.</p><div class="button-row"><button @click="pendingImport = undefined; importDialog?.close()">Cancel</button><button :disabled="saving" @click="confirmImport">{{ saving ? 'Importing…' : 'Replace and import' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>
+  </div>
+</template>

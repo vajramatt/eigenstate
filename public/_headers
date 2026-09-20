@@ -1,0 +1,8 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'; worker-src 'self'
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), fullscreen=(self), screen-wake-lock=(self)
+/sw.js
+  Cache-Control: no-cache
