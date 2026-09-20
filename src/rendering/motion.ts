@@ -11,6 +11,7 @@ export function blendVisual(current: Universe, target: Universe, amount: number)
     current.quantum.phases[i] = v + delta * amount;
   });
   current.quantum.collapsed = target.quantum.collapsed;
+  current.quantum.depth = target.quantum.depth;
   current.quantum.entanglement = mix(current.quantum.entanglement, target.quantum.entanglement);
   current.inference.layers.forEach((v, i) => current.inference.layers[i] = mix(v, target.inference.layers[i]));
   for (const key of ['load', 'context', 'agreement'] as const) current.inference[key] = mix(current.inference[key], target.inference[key]);

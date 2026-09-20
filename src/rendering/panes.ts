@@ -11,6 +11,12 @@ export const REFRESH: Record<PaneKind, number> = { world: 2400, agents: 3900, br
 function drawAgents(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
   grid(ctx, w, h, t, 28);
   const graphWidth = w * 0.72, middle = graphWidth * 0.51;
+  const trace = u.traces.at(-1), traceAge = trace ? u.age - trace.age : Infinity;
+  // Confidence rings and causal emphasis describe the actual nodes.
+  for (const radius of [0.23, 0.34]) {
+    ctx.beginPath(); ctx.strokeStyle = t.line; ctx.lineWidth = 0.5;
+    ctx.ellipse(middle, h * 0.49, graphWidth * radius, h * radius, 0, 0, Math.PI * 2); ctx.stroke();
+  }
   const points = u.agents.map((a, i) => {
     const id = parseInt(a.id.slice(4), 16) || i;
     const angle = id * 2.399963 + Math.sin(time * 0.13 + id) * 0.08;
@@ -28,7 +34,12 @@ function drawAgents(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time 
     });
   });
   u.agents.forEach((a, i) => {
-    const p = points[i]; dot(ctx, p.x, p.y, a.status === 'active' ? t.accent : t.faint, a.status === 'active' ? 3 : 2);
+    const p = points[i], affected = traceAge < 10 && trace?.experiment === a.experiment;
+    const color = affected ? t.warning : a.status === 'active' ? t.accent : t.faint;
+    dot(ctx, p.x, p.y, `${color}18`, 10);
+    ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1;
+    ctx.arc(p.x, p.y, 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * a.confidence); ctx.stroke();
+    dot(ctx, p.x, p.y, color, a.status === 'active' ? 3 : 2);
     if (i % 3 === 0) text(ctx, a.id, p.x + 7, p.y - 7, t.muted, 8);
   });
   line(ctx, w * 0.74, 18, w * 0.74, h - 18, t.line);
@@ -48,26 +59,30 @@ function drawBranches(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, tim
   grid(ctx, w, totalHeight, t, 28);
   const root: [number, number] = [20, totalHeight * 0.5];
   dot(ctx, ...root, t.accent, 3);
+  const trace = u.traces.at(-1), traceAge = trace ? u.age - trace.age : Infinity;
   // A summary fan per experiment, not a fabricated explicit branch tree.
   u.experiments.forEach((e, i) => {
-    const x = w * 0.44, y = 15 + i / 6 * (totalHeight - 30);
-    line(ctx, ...root, x, y, `${t.secondary}88`); dot(ctx, x, y, t.secondary, 2);
-    const end = w - 22, endY = y + (e.convergence - 0.5) * 20;
-    line(ctx, x, y, end, endY, `${t.accent}99`); dot(ctx, end, endY, t.accent, 2.5);
+    const x = w * 0.44, y = 15 + i / Math.max(1, u.experiments.length - 1) * (totalHeight - 30);
+    const end = w - 22, endY = y + (e.convergence - 0.5) * 12;
+    const affected = traceAge < 10 && trace?.experiment === e.id, color = affected ? t.warning : t.accent;
+    const point = (p: number): [number, number] => {
+      const smooth = p * p * (3 - 2 * p);
+      const inverse = 1 - p;
+      return [inverse ** 3 * root[0] + 3 * inverse ** 2 * p * w * 0.38 + 3 * inverse * p ** 2 * w * 0.58 + p ** 3 * end, root[1] + (endY - root[1]) * smooth];
+    };
+    ctx.beginPath(); ctx.moveTo(...root);
+    ctx.bezierCurveTo(w * 0.38, root[1], w * 0.58, endY, end, endY);
+    ctx.strokeStyle = `${color}65`; ctx.lineWidth = 0.6 + e.allocation * 5; ctx.stroke();
+    dot(ctx, end, endY, `${color}20`, 5 + e.convergence * 3);
+    dot(ctx, end, endY, color, 2.5);
     // One result packet crosses each path at a different phase. This is a
     // read-only presentation clock: it never advances branch state or PRNG.
     const packet = (time * 0.16 + i * 0.137) % 1;
-    if (packet < 0.46) {
-      const p = packet / 0.46;
-      dot(ctx, root[0] + (x - root[0]) * p, root[1] + (y - root[1]) * p, t.warning, 1.7);
-    } else {
-      const p = (packet - 0.46) / 0.54;
-      dot(ctx, x + (end - x) * p, y + (endY - y) * p, t.accent, 2);
-    }
-    const flare = (time + i * 1.7 + u.seed % 11) % 13;
-    if (flare < 0.7) {
-      ctx.beginPath(); ctx.strokeStyle = `${t.warning}${Math.round((1 - flare / 0.7) * 190).toString(16).padStart(2, '0')}`;
-      ctx.lineWidth = 1; ctx.arc(end, endY, 3 + flare * 7, 0, Math.PI * 2); ctx.stroke();
+    dot(ctx, ...point(packet), color, 2);
+    if (affected) {
+      const flare = traceAge % 2;
+      ctx.beginPath(); ctx.strokeStyle = `${t.warning}${Math.round((1 - flare / 2) * 190).toString(16).padStart(2, '0')}`;
+      ctx.lineWidth = 1; ctx.arc(end, endY, 3 + flare * 5, 0, Math.PI * 2); ctx.stroke();
     }
     text(ctx, e.id.slice(4), x + 8, y - 9, t.faint, 8);
   });
@@ -83,6 +98,14 @@ function drawQuantum(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): voi
     ctx.beginPath(); ctx.strokeStyle = t.line; ctx.lineWidth = 0.8; ctx.ellipse(cx, cy, r, r * ratio, 0, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.beginPath(); ctx.ellipse(cx, cy, r * 0.37, r, 0, 0, Math.PI * 2); ctx.stroke();
+  // Eight synthetic basis phases, with probability encoded as node size.
+  q.phases.forEach((angle, i) => {
+    const px = cx + Math.cos(angle) * r, py = cy + Math.sin(angle) * r * 0.54;
+    const color = i === q.collapsed ? t.warning : t.secondary;
+    line(ctx, cx, cy, px, py, `${color}35`);
+    dot(ctx, px, py, `${color}20`, 4 + q.probabilities[i] * 10);
+    dot(ctx, px, py, color, 1.3 + q.probabilities[i] * 5);
+  });
   const phase = q.phases[q.collapsed];
   const x = cx + Math.cos(phase) * r * Math.sqrt(q.probabilities[q.collapsed]), y = cy - Math.sin(phase) * r;
   line(ctx, cx, cy, x, y, t.accent, 1.3); dot(ctx, x, y, t.accent, 3);
@@ -91,11 +114,15 @@ function drawQuantum(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): voi
   text(ctx, `depth ${q.depth}`, w * 0.58, cy + 28, t.muted, 9);
   const bottom = h - 24, chartHeight = h * 0.32, bw = (w - 32) / 8;
   q.probabilities.forEach((p, i) => {
-    ctx.fillStyle = i === q.collapsed ? t.accent : `${t.secondary}80`;
-    ctx.fillRect(16 + i * bw + 2, bottom - p * chartHeight * 3, bw - 7, p * chartHeight * 3);
+    const height = p * chartHeight, left = 16 + i * bw + 2;
+    ctx.fillStyle = t.line; ctx.fillRect(left, bottom - chartHeight, bw - 7, chartHeight);
+    ctx.fillStyle = i === q.collapsed ? `${t.warning}80` : `${t.secondary}80`;
+    ctx.fillRect(left, bottom - height, bw - 7, height);
+    line(ctx, left, bottom - height, left + bw - 7, bottom - height, i === q.collapsed ? t.warning : t.accent, 1.5);
     text(ctx, i.toString(2).padStart(3, '0'), 16 + i * bw + bw / 2, bottom + 13, t.faint, 8, 'center');
   });
   line(ctx, 16, bottom + 1, w - 16, bottom + 1, t.line);
+  text(ctx, 'BASIS PROBABILITY / 0–1', 16, bottom - chartHeight - 10, t.faint, 7);
 }
 function drawInference(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
   const n = u.inference, cols = 12, cellW = (w - 32) / cols, cellH = Math.min(13, h * 0.045);
