@@ -9,7 +9,7 @@ class Param {
   setTargetAtTime(value: number) { this.target = value; }
 }
 class Node { connections: unknown[] = []; connect(target: unknown) { this.connections.push(target); } disconnect() {} }
-class Oscillator extends Node { type = ''; frequency = new Param(); start() {} stop() {} }
+class Oscillator extends Node { type = ''; frequency = new Param(); detune = new Param(); start() {} stop() {} }
 class Context {
   static last: Context;
   state = 'suspended'; currentTime = 0; destination = new Node();
@@ -19,6 +19,8 @@ class Context {
   createGain() { const n = Object.assign(new Node(), { gain: new Param() }); this.gains.push(n); return n; }
   createBiquadFilter() { return Object.assign(new Node(), { type: '', frequency: new Param(), Q: new Param() }); }
   createOscillator() { const n = new Oscillator(); this.oscillators.push(n); return n; }
+  createStereoPanner() { return Object.assign(new Node(), { pan: new Param() }); }
+  createDelay() { return Object.assign(new Node(), { delayTime: new Param() }); }
   async resume() { this.state = 'running'; }
   async suspend() { this.state = 'suspended'; }
   async close() { this.state = 'closed'; }
@@ -43,7 +45,12 @@ test('hum creates audio only on request and reports pause, mute, and playing sta
   assert.ok(breath.gain.value - depth.gain.value > 0, 'swells should not cut to silence');
   assert.ok(breath.gain.value + depth.gain.value <= 1, 'modulation must not amplify the peak');
   assert.ok(breath.connections.includes(Context.last.gains[0]), 'master volume must remain after modulation');
-  assert.deepEqual(Context.last.oscillators.filter(o => o.frequency.value > 1).map(o => o.frequency.value), [55, 110.06, 165]);
+  const voices = Context.last.oscillators.filter(o => o.frequency.value > 1);
+  assert.ok(voices.some(o => o.frequency.value === 55), 'preserve the low foundation');
+  assert.ok(voices.some(o => o.frequency.value > 300), 'upper voices should carry on small speakers');
+  const count = Context.last.oscillators.length;
+  await hum.setEnabled(true);
+  assert.equal(Context.last.oscillators.length, count, 'repeated enable must not duplicate voices');
   hum.setActivity(0); const quietGain = Context.last.gains[0].gain.target;
   hum.setActivity(1); assert.ok(Context.last.gains[0].gain.target > quietGain, 'simulation activity should subtly raise the hum');
   await hum.sync(false); assert.equal(hum.status, 'paused'); assert.equal(Context.last.gains[0].gain.target, 0);

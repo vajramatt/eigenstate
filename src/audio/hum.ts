@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-/** Original, locally synthesized room hum. No samples, network, or audio capture. */
+/** Locally synthesized ambient soundscape. No samples, network, or audio capture. */
 export class AmbientHum {
   private context?: AudioContext;
   private master?: GainNode;
@@ -33,11 +33,38 @@ export class AmbientHum {
       const filter = this.context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 380; filter.Q.value = 0.4; filter.connect(breath);
       this.filter = filter; this.breathLfo = lfo; this.setActivity(this.activity);
       this.nodes.push(filter, breath, lfo, depth, this.master);
-      // Keep audible upper harmonics so the hum does not depend on deep bass output.
-      for (const [frequency, level] of [[55, 0.55], [110.06, 0.22], [165, 0.12]]) {
-        const oscillator = this.context.createOscillator(), gain = this.context.createGain();
+      // A low A/E foundation with a restrained minor chord above it. Upper
+      // voices remain audible on laptop speakers; independent envelopes keep
+      // the chord moving without scheduling notes or advancing simulation RNG.
+      const voices = [[55, 0.30], [82.4069, 0.16], [110.06, 0.13], [130.8128, 0.09], [164.8138, 0.09], [220.08, 0.06], [329.6276, 0.04]];
+      voices.forEach(([frequency, level], index) => {
+        const oscillator = this.context!.createOscillator(), gain = this.context!.createGain();
+        const pan = this.context!.createStereoPanner();
         oscillator.type = 'sine'; oscillator.frequency.value = frequency; gain.gain.value = level;
-        oscillator.connect(gain); gain.connect(filter); oscillator.start(); this.nodes.push(oscillator, gain);
+        oscillator.connect(gain); gain.connect(pan); pan.connect(filter);
+        // Keep the bass centered; higher partials drift slowly across stereo.
+        if (index > 1) {
+          const orbit = this.context!.createOscillator(), width = this.context!.createGain();
+          orbit.frequency.value = 0.013 + index * 0.003; width.gain.value = 0.65;
+          orbit.connect(width); width.connect(pan.pan); orbit.start();
+          const swell = this.context!.createOscillator(), swellDepth = this.context!.createGain();
+          swell.frequency.value = 0.019 + index * 0.004; swellDepth.gain.value = level * 0.35;
+          gain.gain.value = level * 0.65;
+          swell.connect(swellDepth); swellDepth.connect(gain.gain); swell.start();
+          const drift = this.context!.createOscillator(), cents = this.context!.createGain();
+          drift.frequency.value = 0.009 + index * 0.002; cents.gain.value = 3;
+          drift.connect(cents); cents.connect(oscillator.detune); drift.start();
+          this.nodes.push(orbit, width, swell, swellDepth, drift, cents);
+        }
+        oscillator.start(); this.nodes.push(oscillator, gain, pan);
+      });
+      // Two quiet stereo reflections add space. No feedback loop: echoes are
+      // bounded, and all dry/wet audio passes through breath and master gain.
+      for (const [delayTime, position] of [[0.37, -0.8], [0.61, 0.8]]) {
+        const delay = this.context.createDelay(1), wet = this.context.createGain(), pan = this.context.createStereoPanner();
+        delay.delayTime.value = delayTime; wet.gain.value = 0.12; pan.pan.value = position;
+        filter.connect(delay); delay.connect(wet); wet.connect(pan); pan.connect(breath);
+        this.nodes.push(delay, wet, pan);
       }
     }
     await this.sync(this.active);
