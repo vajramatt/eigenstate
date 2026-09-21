@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://screensaver.crossinginto.ai"><strong>Enter Eigenstate</strong></a> ·
-  <a href="#sound">Sound</a> · <a href="#controls">Controls</a> ·
+  <a href="#why-eigenstate">Why Eigenstate?</a> · <a href="#sound">Sound</a> · <a href="#controls">Controls</a> ·
   <a href="#run-locally">Run locally</a> · <a href="#privacy">Privacy</a>
 </p>
 
@@ -13,6 +13,26 @@
 A browser screensaver with a memory. Open it, enter fullscreen, and watch a synthetic universe evolve. Agents reorganize, experiments change, and the world model shifts in response. Topology changes leave a trace. Close the tab and return later: the universe resumes with its identity intact and elapsed time reconciled.
 
 Eigenstate is a browser screensaver for entertainment only. All agents, terminal logs, and metrics are simulated. It performs no real AI inference or quantum computation. The numbers describe its own synthetic simulation; they are not measurements of your computer or private reasoning traces.
+
+## Why Eigenstate?
+
+In quantum physics, an **eigenstate** is a state with a definite value for a particular measurable property, called an *observable*. Energy and a component of spin are examples of observables. If a system is in an eigenstate of an observable, an ideal measurement of that observable returns its associated *eigenvalue* with certainty.
+
+The mathematical definition is:
+
+$$
+\hat{A}|\psi\rangle = a|\psi\rangle
+$$
+
+Here, $\hat{A}$ is the operator representing the observable, $|\psi\rangle$ is the eigenstate, and $a$ is the eigenvalue. Applying the operator to this state vector is equivalent to multiplying it by a number. The state and the measurement result are different things: the eigenstate describes the system; the eigenvalue is the value that measurement returns. See [MIT's notes on observables and uncertainty](https://ocw.mit.edu/courses/8-05-quantum-physics-ii-fall-2013/005979fa741c3ea2e0430456b70caf93_MIT8_05F13_Chap_05.pdf).
+
+A qubit gives a concrete example. The states $|0\rangle$ and $|1\rangle$ are eigenstates of the Pauli-Z operator, with eigenvalues +1 and −1. A computational-basis measurement records these as the bit labels 0 and 1, respectively. A qubit prepared in $|0\rangle$ therefore gives 0 with certainty. The equal superposition $(|0\rangle + |1\rangle)/\sqrt{2}$ gives either bit with 50% probability. [IBM's qubit measurement guide](https://quantum.cloud.ibm.com/docs/en/guides/measure-qubits) explains this measurement basis.
+
+Being an eigenstate depends on the observable. That same equal superposition is an eigenstate of Pauli-X, even though its Z-basis result is uncertain. The term does not mean that every property is definite or that the system is frozen.
+
+For this screensaver, the name is an artistic reference to a state revealed through its observables. The panes show different aspects of one shared universe. Agent changes affect experiments, experiments reshape the world model, and those changes leave traces. Its persistent identity and visible history give you something to recognize when you return. These are rules of the browser simulation; its quantum labels and probability displays make no claim to physical quantum behavior.
+
+Click **Why Eigenstate?** beneath the title for the in-app explanation. Close it with Escape, Q, the close button, or a click outside the dialog.
 
 ## Inside the observatory
 

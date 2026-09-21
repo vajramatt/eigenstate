@@ -20,6 +20,7 @@ const appVersion = __APP_VERSION__;
 const humOn = ref(false), humVolume = ref(35);
 const binauralOn = ref(false), binauralIntensity = ref(35);
 const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>(), privacy = ref<HTMLDialogElement>();
+const meaning = ref<HTMLDialogElement>();
 const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
 const prefs = ref<Preferences>({ theme: 'eigenstate', layout: 'adaptive', quiet: false });
 const theme = computed(() => getTheme(prefs.value.theme));
@@ -51,7 +52,7 @@ function refresh() { universe.value = runtime.snapshot.universe; triggerRef(univ
 runtime.onChange = refresh;
 watch(() => director.value.intensity, value => hum.setActivity(value), { immediate: true });
 watch(() => Boolean(crash.value), active => {
-  if (active) { settings.value?.close(); colophon.value?.close(); help.value?.close(); privacy.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
+  if (active) { settings.value?.close(); colophon.value?.close(); help.value?.close(); privacy.value?.close(); meaning.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
   void hum.sync(!active && !runtime.paused && !document.hidden);
 });
 async function exportCollapsed() {
@@ -77,6 +78,7 @@ async function toggleHum() {
 }
 function setPaused() { runtime.setPaused(!runtime.paused); void hum.sync(!runtime.paused && !runtime.crash && !document.hidden); }
 function openColophon() { idle.value = false; colophon.value?.showModal(); }
+function openMeaning() { meaning.value?.showModal(); activity(); }
 function backdrop(e: MouseEvent, dialog: HTMLDialogElement | undefined) {
   if (!dialog || e.target !== dialog) return;
   const r = dialog.getBoundingClientRect();
@@ -90,7 +92,7 @@ async function openPrivacy() {
 }
 function activity() {
   idle.value = false; clearTimeout(hideTimer);
-  if (full.value && !settings.value?.open) hideTimer = setTimeout(() => idle.value = true, 4000);
+  if (full.value && !settings.value?.open && !meaning.value?.open) hideTimer = setTimeout(() => idle.value = true, 4000);
 }
 async function fullscreen() {
   try {
@@ -158,6 +160,10 @@ function leave() { clearInterval(interval); void hum.sync(false); void runtime.s
 function keyboard(e: KeyboardEvent) {
   if (runtime.crash) return;
   const target = e.target as HTMLElement;
+  if (meaning.value?.open) {
+    if (e.key.toLowerCase() === 'q' && !e.metaKey && !e.ctrlKey && !e.altKey) meaning.value.close();
+    return;
+  }
   if (colophon.value?.open || help.value?.open || privacy.value?.open) {
     if (e.key === 'q' || e.key === '~' || (privacy.value?.open && e.key.toLowerCase() === 'p')) { colophon.value?.close(); help.value?.close(); privacy.value?.close(); }
     return;
@@ -210,7 +216,7 @@ onBeforeUnmount(() => {
   <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, `director-${director.phase}`, { 'motion-still': prefs.quiet || halted }]">
     <CrashScreen v-if="crash" :crash="crash" :universe="universe" />
     <header class="topbar">
-      <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ {{ appVersion }}</span></h1><p>A browser screensaver · for entertainment only</p></div></div>
+      <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ {{ appVersion }}</span></h1><p>A browser screensaver · for entertainment only</p><button class="name-link" aria-haspopup="dialog" aria-controls="meaning-dialog" @click="openMeaning">Why Eigenstate? <span aria-hidden="true">↗</span></button></div></div>
       <nav class="controls" aria-label="Observatory controls">
         <a class="back-link" href="https://crossinginto.ai/tools">Crossing Into <span aria-hidden="true">↗</span></a>
         <button class="shortcut-theme" title="Next theme (T)" aria-label="Next theme" @click="nextTheme">t</button><label class="theme-picker"><span class="theme-dot" aria-hidden="true"></span><span class="sr-only">Color theme</span><select aria-label="Color theme" :value="prefs.theme" @change="changeTheme"><option v-for="t in themes" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
@@ -290,6 +296,21 @@ onBeforeUnmount(() => {
         <div class="reset-section"><div><h3>Start over</h3><p>Create a new identity, seed, and simulation age.</p></div><button class="danger-button" :disabled="!canMutate" @click="resetText = ''; resetDialog?.showModal()">Reset universe…</button></div>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p class="about-note">Eigenstate is a browser screensaver for entertainment only. All agents, logs, and metrics are simulated. It performs no real AI inference or quantum computation. No accounts, analytics, or simulation data uploads. <button class="inline-link" @click="openPrivacy">See everything Eigenstate can access.</button> <a href="https://crossinginto.ai/tools">A Crossing Into tool.</a></p>
+      </div>
+    </dialog>
+
+    <dialog id="meaning-dialog" ref="meaning" class="meaning-dialog" aria-labelledby="meaning-title" @click="backdrop($event, meaning)" @close="activity">
+      <div class="dialog-heading"><div><span class="dialog-kicker">THE NAME / QUANTUM PHYSICS</span><h2 id="meaning-title" tabindex="-1" autofocus>Why Eigenstate?</h2></div><button class="close-button" aria-label="Close explanation" @click="meaning?.close()">×</button></div>
+      <div class="meaning-body">
+        <p>In quantum physics, an <strong>eigenstate</strong> is a state with a definite value for a particular measurable property, called an <em>observable</em>. An ideal measurement of that property gives its associated <em>eigenvalue</em> with certainty.</p>
+        <figure class="eigen-equation"><div role="math" aria-label="A hat acting on ket psi equals a times ket psi">Â |ψ⟩ = a |ψ⟩</div><figcaption>Â is the operator for the observable, |ψ⟩ is the eigenstate, and a is its eigenvalue. Applying the operator multiplies this state vector by a number.</figcaption></figure>
+        <h3>A qubit example</h3>
+        <p>In the computational basis, a qubit prepared in |0⟩ gives 0 with certainty; one prepared in |1⟩ gives 1. The equal superposition (|0⟩ + |1⟩)/√2 gives either result with 50% probability.</p>
+        <p>That certainty depends on what you measure. An eigenstate of one observable can be a superposition of eigenstates of another.</p>
+        <h3>Why this screensaver carries the name</h3>
+        <p>Eigenstate borrows the idea of a state revealed through its observables. Each pane shows a different aspect of one shared, evolving universe, and changes leave traces you can follow. The connection is artistic: the browser runs a synthetic simulation, with no real quantum computation or AI inference.</p>
+        <p class="meaning-sources">Read further: <a href="https://ocw.mit.edu/courses/8-05-quantum-physics-ii-fall-2013/005979fa741c3ea2e0430456b70caf93_MIT8_05F13_Chap_05.pdf" target="_blank" rel="noopener noreferrer">MIT: observables and uncertainty (PDF) ↗</a> · <a href="https://quantum.cloud.ibm.com/docs/en/guides/measure-qubits" target="_blank" rel="noopener noreferrer">IBM: measuring qubits ↗</a></p>
+        <div class="meaning-return"><button @click="meaning?.close()">Return to the observatory</button><span>Esc / Q or click outside to close</span></div>
       </div>
     </dialog>
 
