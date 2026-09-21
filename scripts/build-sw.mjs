@@ -22,8 +22,6 @@ self.addEventListener('activate', event => { event.waitUntil((async () => {
   const keys = await caches.keys();
   await Promise.all(keys.filter(k => k.startsWith('eigenstate-') && k !== CACHE).map(k => caches.delete(k)));
   await self.clients.claim();
-  const windows = await self.clients.matchAll({ type: 'window' });
-  await Promise.all(windows.map(client => client.navigate(client.url)));
 })()); });
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);

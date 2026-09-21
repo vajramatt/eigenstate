@@ -44,6 +44,8 @@ npm run deploy
 
 ## Constraints
 
+Hosting budget is $0. Keep deployment static-only on Cloudflare Workers Static Assets, with local builds and browser-side simulation and storage. Do not add billable backend compute, paid APIs, hosted databases, paid build services, or plan upgrades. Recheck static-asset pricing before changing hosting architecture; if a feature cannot fit the zero-cost constraint, propose a free alternative rather than enabling charges.
+
 Keep simulation offline. Never inspect user content, send simulation state to a server, or add analytics. Only user-selected snapshot imports may read files. Bound histories and collections. Every visible disturbance should derive from shared state, and every meaningful cause should leave a bounded trace. Only the seeded provider supplies simulation randomness; cryptographic randomness is reserved for new identity creation. Web Locks protect the universe from multiple writers. Respect reduced motion and hidden tabs. Hum requires a user gesture and starts off. Preserve existing universes during tests.
 
 The abandoned native prototype is stored in ignored `.native-prototype/` for local reference. It is not part of the product or build.

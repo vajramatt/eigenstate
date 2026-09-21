@@ -206,6 +206,8 @@ An installed browser app can be removed through the browser's app-management int
 
 The included `wrangler.jsonc` serves `dist/` through Cloudflare Workers Static Assets with no backend. Matthew's configured custom domain is `screensaver.crossinginto.ai`. Change or remove the route before deploying your own copy.
 
+The project has a $0 hosting budget. Builds run locally, and simulation and storage stay in the browser. Cloudflare currently lists static-asset requests as free and unlimited, with no additional asset-storage charge. No paid backend, API, or database is required. Check [Cloudflare's static-asset pricing](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/) before changing the hosting setup.
+
 ```sh
 npx wrangler login
 npm run deploy
@@ -220,6 +222,8 @@ The companion listing lives in `crossinginto.ai/content/tools.md`. Deploy Eigens
 Simulation and sound run on your device. Eigenstate has no accounts, analytics, API calls, or telemetry reporting. It does not inspect your files or hardware usage, execute shell commands, or upload universe state. Import reads only the JSON file you explicitly select.
 
 The browser requests this site's static assets and checks its service worker for updates. Ordinary hosting access logs may exist at the hosting provider. Once the production shell is cached, the app can reopen offline. External links navigate only when selected. The app bundles its code and uses system fonts.
+
+Production checks for updates on startup and once an hour. New assets download in the background without reloading open tabs or interrupting world view. An update notice asks you to reload when convenient. Local development can still reload the page when source files change.
 
 ## Colophon
 

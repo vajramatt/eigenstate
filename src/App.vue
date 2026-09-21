@@ -74,7 +74,7 @@ async function exportCollapsed() {
   } catch (e) { error.value = String(e); }
 }
 function notify(value: string) { toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4500); }
-function updateAvailable(event: Event) { notify(`Eigenstate ${(event as CustomEvent<string>).detail} found. Updating…`); }
+function updateAvailable() { notify('Update ready. Reload when convenient.'); }
 async function savePrefs() {
   applyTheme(theme.value);
   try { await runtime.store.savePreferences({ ...prefs.value }); }

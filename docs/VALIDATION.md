@@ -1,5 +1,13 @@
 # Validation
 
+## Background updates, September 21, 2026
+
+All 55 tests and the production build pass. The generated service worker is executed in an isolated test to verify asset caching, activation, old-cache cleanup, and zero client navigations. Notification tests cover first install, replacement workers, duplicate events, and updates without a package-version change.
+
+An isolated Chrome session exercised initial installation and two successive worker replacements against a temporary server. Neither replacement reloaded the page. The update notice appeared, world view stayed active, and the universe identity survived both replacements and a manual reload. No browser errors were reported.
+
+Hosting remains static-only, with local builds and no paid backend bindings. Cloudflare's published static-asset pricing was checked on September 21, 2026; the $0 hosting constraint is recorded in `AGENTS.md`.
+
 ## World view and display care, September 21, 2026
 
 `npm test` passes all 53 tests. World-view coverage includes manual entry, idle deadlines, alternating layouts, input resets, dimming bounds, and black output for still scenes. Rendering tests verify label removal, bounded detail scaling, experiment highlights, camera orientation, and simulation immutability. Shared-clock tests cover switching views, pause, hidden-time gaps, and new universe identities.
