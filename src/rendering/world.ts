@@ -3,16 +3,21 @@ import type { Universe } from '../core/types.ts';
 import type { Theme } from './themes.ts';
 import { dot, line, text, type Ctx } from './drawing.ts';
 
-export function drawWorld(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
-  const size = Math.min(w * 0.7, h * 0.95), cx = w * 0.49, cy = h * 0.5;
+export function drawWorld(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age, ambient = false): void {
+  const phase = time + u.seed % 997;
+  const size = ambient ? Math.min(w, h) * (0.64 + Math.sin(phase * 0.019) * 0.07) : Math.min(w * 0.7, h * 0.95);
+  const cx = w * (ambient ? 0.5 + Math.sin(phase * 0.013) * 0.16 : 0.49);
+  const cy = h * (ambient ? 0.5 + Math.cos(phase * 0.017) * 0.13 : 0.5);
   const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, size);
   halo.addColorStop(0, `${t.secondary}20`); halo.addColorStop(0.55, `${t.accent}09`); halo.addColorStop(1, `${t.background}00`);
   ctx.fillStyle = halo; ctx.fillRect(0, 0, w, h);
   const angle = time * 0.055, c = Math.cos(angle), s = Math.sin(angle);
+  const tilt = ambient ? Math.sin(phase * 0.023) * 0.32 : 0;
   const project = ([x, y, z]: number[]): [number, number] => {
     const rx = x * c - z * s, rz = x * s + z * c;
     const perspective = 3.8 / (3.8 + rz);
-    return [cx + rx * size * 0.5 * perspective, cy + (y * 0.88 - rz * 0.3) * size * 0.5 * perspective];
+    const py = y * 0.88 - rz * 0.3;
+    return [cx + (rx * Math.cos(tilt) - py * Math.sin(tilt)) * size * 0.5 * perspective, cy + (rx * Math.sin(tilt) + py * Math.cos(tilt)) * size * 0.5 * perspective];
   };
   // Slow camera orbit reveals the persisted state geometry; it does not change it.
   const corners = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]].map(project);
@@ -43,6 +48,7 @@ export function drawWorld(ctx: Ctx, u: Universe, t: Theme, w: number, h: number,
     dot(ctx, ...p, color, radius);
     if (depth < -0.3) dot(ctx, ...p, t.text, 0.7);
   });
+  if (ambient) return; // No labels, leader lines, axes, or corner matrix in idle scenes.
   u.experiments.forEach((e, index) => {
     const group = points.filter((_, i) => i % 7 === index);
     const x = group.reduce((sum, p) => sum + p[0], 0) / group.length, y = group.reduce((sum, p) => sum + p[1], 0) / group.length;

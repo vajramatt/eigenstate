@@ -12,10 +12,14 @@ import type { Preferences, Snapshot } from './core/types.ts';
 import { decodeSnapshot, encodeSnapshot, MAX_BYTES } from './persistence/snapshot.ts';
 import { applyTheme, getTheme, themes } from './rendering/themes.ts';
 import { directUniverse } from './rendering/director.ts';
+import { AmbientDirector } from './rendering/ambient.ts';
 import { AmbientHum } from './audio/hum.ts';
 
 const runtime = new UniverseRuntime();
 const hum = new AmbientHum();
+const ambientDirector = new AmbientDirector(performance.now());
+const ambient = ref(ambientDirector.update(performance.now()));
+const systemReduced = ref(false);
 const appVersion = __APP_VERSION__;
 const humOn = ref(false), humVolume = ref(35);
 const binauralOn = ref(false), binauralIntensity = ref(35);
@@ -24,6 +28,7 @@ const meaning = ref<HTMLDialogElement>();
 const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
 const prefs = ref<Preferences>({ theme: 'eigenstate', layout: 'adaptive', quiet: false });
 const theme = computed(() => getTheme(prefs.value.theme));
+const motionQuiet = computed(() => prefs.value.quiet || systemReduced.value);
 const settings = ref<HTMLDialogElement>(), resetDialog = ref<HTMLDialogElement>(), fileInput = ref<HTMLInputElement>();
 const pendingImport = shallowRef<Snapshot>(), importDialog = ref<HTMLDialogElement>();
 const resetText = ref(''), error = ref(''), toast = ref(''), persistent = ref(false), storageChecked = ref(false);
@@ -43,7 +48,10 @@ const canMutate = computed(() => { void revision.value; return runtime.canMutate
 const message = computed(() => { void revision.value; return runtime.message; });
 const latestAnomaly = computed(() => { void revision.value; const e = universe.value.anomalies.at(-1); return e && universe.value.age - e.age < 60 ? e : null; });
 const director = computed(() => { void revision.value; return directUniverse(universe.value, runtime.snapshot.crashSchedule); });
-const layout = computed(() => prefs.value.layout === 'adaptive' ? (universe.value.seed % 2 ? 'observatory' : 'analysis') : prefs.value.layout);
+const layout = computed(() => {
+  const preferred = prefs.value.layout === 'adaptive' ? (universe.value.seed % 2 ? 'observatory' : 'analysis') : prefs.value.layout;
+  return ambient.value.alternateLayout ? (preferred === 'observatory' ? 'analysis' : 'observatory') : preferred;
+});
 let interval: ReturnType<typeof setInterval> | undefined, hideTimer: ReturnType<typeof setTimeout> | undefined, toastTimer: ReturnType<typeof setTimeout> | undefined;
 let wake: WakeLockSentinel | undefined, reduced: MediaQueryList;
 let visibilityQueue = Promise.resolve();
@@ -52,7 +60,7 @@ function refresh() { universe.value = runtime.snapshot.universe; triggerRef(univ
 runtime.onChange = refresh;
 watch(() => director.value.intensity, value => hum.setActivity(value), { immediate: true });
 watch(() => Boolean(crash.value), active => {
-  if (active) { settings.value?.close(); colophon.value?.close(); help.value?.close(); privacy.value?.close(); meaning.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
+  if (active) { activity(); settings.value?.close(); colophon.value?.close(); help.value?.close(); privacy.value?.close(); meaning.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
   void hum.sync(!active && !runtime.paused && !document.hidden);
 });
 async function exportCollapsed() {
@@ -90,9 +98,25 @@ async function openPrivacy() {
   settings.value?.close(); colophon.value?.close(); help.value?.close();
   await nextTick(); privacy.value?.showModal();
 }
+function updateAmbient() {
+  const dialogOpen = [settings, meaning, colophon, help, privacy, resetDialog, importDialog].some(dialog => dialog.value?.open);
+  ambient.value = ambientDirector.update(performance.now(), {
+    blocked: !ready.value || document.hidden || Boolean(crash.value) || dialogOpen,
+    worldEvent: director.value.phase === 'trace' && director.value.focus === 'world',
+    still: motionQuiet.value || halted.value,
+  });
+}
 function activity() {
+  ambientDirector.reset(performance.now());
+  ambient.value = ambientDirector.update(performance.now());
   idle.value = false; clearTimeout(hideTimer);
   if (full.value && !settings.value?.open && !meaning.value?.open) hideTimer = setTimeout(() => idle.value = true, 4000);
+}
+function enterWorld() {
+  if (!ready.value || crash.value) return;
+  activity();
+  ambientDirector.enterWorld(performance.now());
+  updateAmbient();
 }
 async function fullscreen() {
   try {
@@ -148,7 +172,7 @@ async function resetUniverse() {
   catch (e) { error.value = String(e); }
   finally { saving.value = false; }
 }
-function startTimer() { clearInterval(interval); interval = setInterval(() => { runtime.tick(); refresh(); }, 1000); }
+function startTimer() { clearInterval(interval); interval = setInterval(() => { runtime.tick(); refresh(); updateAmbient(); }, 1000); }
 function visibility() {
   const hidden = document.hidden;
   visibilityQueue = visibilityQueue.then(async () => {
@@ -158,6 +182,9 @@ function visibility() {
 }
 function leave() { clearInterval(interval); void hum.sync(false); void runtime.suspend(); }
 function keyboard(e: KeyboardEvent) {
+  const wasWorld = ambient.value.world;
+  if (wasWorld && e.repeat && e.key.toLowerCase() === 'w') return;
+  activity();
   if (runtime.crash) return;
   const target = e.target as HTMLElement;
   if (meaning.value?.open) {
@@ -176,6 +203,7 @@ function keyboard(e: KeyboardEvent) {
   switch (action) {
     case 'pause': setPaused(); break;
     case 'fullscreen': void fullscreen(); break;
+    case 'world': if (!wasWorld) enterWorld(); break;
     case 'theme': nextTheme(); break;
     case 'hum': void toggleHum(); break;
     case 'colophon': openColophon(); break;
@@ -183,22 +211,22 @@ function keyboard(e: KeyboardEvent) {
     case 'settings': openSettings(); break;
     case 'privacy': void openPrivacy(); break;
   }
-  activity();
 }
-function reducedChanged() { if (reduced.matches) { prefs.value.quiet = true; void savePrefs(); } }
+function reducedChanged() { systemReduced.value = reduced.matches; if (reduced.matches) { prefs.value.quiet = true; void savePrefs(); } }
 onMounted(async () => {
-  reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  reduced = matchMedia('(prefers-reduced-motion: reduce)'); systemReduced.value = reduced.matches;
   try {
     const stored = await runtime.store.loadPreferences();
     prefs.value = { theme: getTheme(stored.theme ?? '').id, layout: ['adaptive', 'observatory', 'analysis'].includes(stored.layout ?? '') ? stored.layout! : 'adaptive', quiet: Boolean(stored.quiet || reduced.matches) };
     persistent.value = await navigator.storage?.persisted?.() ?? false;
   } catch { /* Runtime will show storage status. */ }
   storageChecked.value = true; applyTheme(theme.value);
-  await runtime.start(); ready.value = true; refresh();
+  await runtime.start(); ready.value = true; refresh(); activity();
   if (!document.hidden) startTimer(); else await runtime.suspend();
   reduced.addEventListener('change', reducedChanged);
   document.addEventListener('visibilitychange', visibility); document.addEventListener('fullscreenchange', fullscreenChanged);
   document.addEventListener('keydown', keyboard); document.addEventListener('pointermove', activity); document.addEventListener('focusin', activity);
+  document.addEventListener('pointerdown', activity); document.addEventListener('wheel', activity, { passive: true });
   window.addEventListener('eigenstate:update-available', updateAvailable);
   window.addEventListener('pagehide', leave); window.addEventListener('pageshow', visibility);
   await nextTick();
@@ -207,20 +235,23 @@ onBeforeUnmount(() => {
   leave(); clearTimeout(hideTimer); clearTimeout(toastTimer); void wake?.release(); void hum.destroy();
   document.removeEventListener('visibilitychange', visibility); document.removeEventListener('fullscreenchange', fullscreenChanged);
   document.removeEventListener('keydown', keyboard); document.removeEventListener('pointermove', activity); document.removeEventListener('focusin', activity);
+  document.removeEventListener('pointerdown', activity); document.removeEventListener('wheel', activity);
   window.removeEventListener('eigenstate:update-available', updateAvailable);
   window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', visibility); reduced?.removeEventListener('change', reducedChanged);
 });
 </script>
 
 <template>
-  <div class="observatory" :class="[{ immersive: full, idle }, `layout-${layout}`, `director-${director.phase}`, { 'motion-still': prefs.quiet || halted }]">
+  <div class="observatory" @close.capture="activity" :class="[{ immersive: full, idle, 'ambient-active': ambient.world, 'ambient-restored': ambient.brightness === 1 }, `layout-${layout}`, `director-${director.phase}`, { 'motion-still': motionQuiet || halted }]">
     <CrashScreen v-if="crash" :crash="crash" :universe="universe" />
+    <div class="dashboard" :inert="ambient.world" :style="{ opacity: ambient.world ? 0 : ambient.brightness }">
     <header class="topbar">
       <div class="brand"><img src="/favicon.svg" width="36" height="36" alt="" /><div><h1>Eigenstate<span class="version">/ {{ appVersion }}</span></h1><p>A browser screensaver · for entertainment only</p><button class="name-link" aria-haspopup="dialog" aria-controls="meaning-dialog" @click="openMeaning">Why Eigenstate? <span aria-hidden="true">↗</span></button></div></div>
       <nav class="controls" aria-label="Observatory controls">
         <a class="back-link" href="https://crossinginto.ai/tools">Crossing Into <span aria-hidden="true">↗</span></a>
         <button class="shortcut-theme" title="Next theme (T)" aria-label="Next theme" @click="nextTheme">t</button><label class="theme-picker"><span class="theme-dot" aria-hidden="true"></span><span class="sr-only">Color theme</span><select aria-label="Color theme" :value="prefs.theme" @change="changeTheme"><option v-for="t in themes" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
         <button class="icon-button" title="Settings (S)" aria-label="Settings" @click="openSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg></button>
+        <button class="fullscreen-button world-view-button" title="World view (W)" aria-label="World view" :disabled="!ready" @click="enterWorld"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><ellipse cx="12" cy="12" rx="3.5" ry="8"/><path d="M4 12h16"/></svg><span>World view</span><kbd>W</kbd></button>
         <button class="fullscreen-button" @click="fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/></svg><span>{{ full ? 'Exit fullscreen' : 'Enter fullscreen' }}</span><kbd>F</kbd></button>
       </nav>
     </header>
@@ -238,18 +269,18 @@ onBeforeUnmount(() => {
         <section class="pane world-pane" :class="{ 'director-focus': director.focus === 'world' }" aria-labelledby="world-title">
           <header class="pane-heading"><h2 id="world-title"><span class="pane-marker">◈</span> World model</h2><span>LATENT STATE PROJECTION</span></header>
           <div class="world-readout"><div><span class="metric-label">Branches evaluated</span><strong>{{ compact(universe.branches.explored) }}</strong></div><div class="world-meta"><span>Confidence <b>{{ universe.branches.confidence.toFixed(6) }}</b></span><span>Divergence <b>{{ universe.branches.divergence.toFixed(6) }}</b></span></div></div>
-          <TelemetryCanvas kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
+          <TelemetryCanvas :suspended="ambient.world" kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
           <div class="world-trace" aria-label="World model trace"><span class="terminal-prompt">❯</span><span>world.integrate</span><span>epoch={{ universe.epoch }} · vectors={{ universe.world.coordinates.length }} · coupling={{ universe.world.coupling.filter(v => v > 0).length }}/64</span><span class="trace-marker" aria-hidden="true"></span></div>
           <div class="world-bottom"><div><span>Compute allocation</span><div class="allocation-track"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div><div class="allocation-legend"><span>Inference</span><span>Quantum</span><span>Branching</span><span>Reserve</span></div></div><div class="memory-readout"><span>Agent memory</span><strong>{{ universe.resources.memory.toFixed(2) }} <small>GB</small></strong></div></div>
         </section>
 
-        <section class="pane agent-pane" :class="{ 'director-focus': director.focus === 'agents' }" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title">Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
+        <section class="pane agent-pane" :class="{ 'director-focus': director.focus === 'agents' }" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title">Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas :suspended="ambient.world" kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
 
-        <section class="pane quantum-pane" :class="{ 'director-focus': director.focus === 'quantum' }" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title">Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
+        <section class="pane quantum-pane" :class="{ 'director-focus': director.focus === 'quantum' }" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title">Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas :suspended="ambient.world" kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
 
-        <section class="pane inference-pane" :class="{ 'director-focus': director.focus === 'inference' }" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title">Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><InferenceReadout :throughput="universe.inference.throughput" :tokens="universe.inference.tokens" :intensity="director.intensity" :quiet="prefs.quiet" :paused="halted || mode === 'blocked'" /></footer></section>
+        <section class="pane inference-pane" :class="{ 'director-focus': director.focus === 'inference' }" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title">Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas :suspended="ambient.world" kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><InferenceReadout :throughput="universe.inference.throughput" :tokens="universe.inference.tokens" :intensity="director.intensity" :quiet="motionQuiet" :paused="halted || mode === 'blocked'" /></footer></section>
 
-        <section class="pane branch-pane" :class="{ 'director-focus': director.focus === 'branches' }" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Experiment branch summaries with entropy and confidence history" /></section>
+        <section class="pane branch-pane" :class="{ 'director-focus': director.focus === 'branches' }" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title">Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas :suspended="ambient.world" kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Experiment branch summaries with entropy and confidence history" /></section>
 
         <section class="pane experiment-pane" :class="{ 'director-focus': director.focus === 'experiment' }" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title">Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
           <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button><button role="tab" :aria-selected="tab === 'trace'" aria-controls="causal-trace" @click="tab = 'trace'">Trace <span>{{ universe.traces.length }}</span></button></div>
@@ -267,13 +298,20 @@ onBeforeUnmount(() => {
           <div v-else id="causal-trace" role="tabpanel" class="trace-view"><p v-if="!causalTraces.length" class="trace-empty">Waiting for topology change. Every retained cause will remain here.</p><article v-for="trace in causalTraces" :key="trace.id" class="trace-entry"><header><button @click="selected = trace.experiment; tab = 'source'">{{ trace.id }}</button><time>{{ formatAge(trace.age).slice(5) }}</time></header><p class="trace-route">{{ trace.agent }} → {{ trace.experiment }}</p><ol><li><span>01 / topology</span>{{ trace.cause }}</li><li><span>02 / experiment</span>{{ trace.experimentEffect }}</li><li><span>03 / world</span>{{ trace.worldEffect }}</li></ol></article></div>
         </section>
 
-        <section class="pane event-pane" :class="{ 'director-focus': director.focus === 'terminal' }" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="prefs.quiet" :paused="halted || mode === 'blocked'" :ready="ready" /></section>
+        <section class="pane event-pane" :class="{ 'director-focus': director.focus === 'terminal' }" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title">Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="motionQuiet" :paused="halted || mode === 'blocked'" :ready="ready" /></section>
       </div>
     </main>
 
     <footer class="app-footer"><div><button class="colophon-link" @click="openColophon" title="Colophon (~)"><span class="small-mark">◇</span> colophon <kbd>~</kbd></button><button @click="openPrivacy" title="Privacy and access (P)">Privacy &amp; access <kbd>P</kbd></button><span class="synthetic-note">Screensaver · entertainment only · simulated data.</span></div><div><span class="persistence-dot" :class="{ warning: mode !== 'writer' }"></span><span>{{ mode === 'writer' ? 'Saved in this browser' : mode === 'follower' ? 'Following active tab' : mode === 'memory' ? 'Session only · export to keep' : mode === 'blocked' ? 'Saved state preserved' : 'Connecting to local state' }}</span><button @click="toggleHum" :aria-pressed="humOn" title="Ambient hum (D)">{{ humOn ? `Hum ${humStatus}` : 'Hum off' }} <kbd>D</kbd></button><button @click="help?.showModal()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button @click="setPaused" :disabled="!canPause">{{ paused ? 'Resume' : 'Pause' }} <kbd>Space</kbd></button></div></footer>
 
     <div v-if="toast" class="toast" role="status">{{ toast }}</div>
+
+    </div>
+    <Transition name="ambient-scene">
+      <div v-if="ambient.world && !crash" class="ambient-world" aria-label="Idle world view" @click.stop>
+        <TelemetryCanvas kind="world" ambient :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted" :tempo="0.7" :style="{ opacity: ambient.worldBrightness }" label="World model without labels. Move the pointer, tap, or press a key to return to the dashboard." />
+      </div>
+    </Transition>
 
     <dialog ref="settings" class="settings-dialog" aria-labelledby="settings-title" @close="activity">
       <div class="dialog-heading"><div><span class="dialog-kicker">YOUR OBSERVATORY</span><h2 id="settings-title">Settings</h2></div><button aria-label="Close settings" class="close-button" @click="settings?.close()">×</button></div>
@@ -288,7 +326,13 @@ onBeforeUnmount(() => {
           <label v-if="binauralOn" class="setting-row"><span>Binaural intensity<small>{{ binauralIntensity }}% · follows hum volume and pause</small></span><input aria-label="Binaural intensity" type="range" min="0" max="100" v-model.number="binauralIntensity" @input="hum.setBinauralIntensity(binauralIntensity / 100)" /></label>
           <p>Two steady tones beneath the ambient soundscape. Sound design for entertainment; no therapeutic or brain synchronization claims. Off on each visit.</p>
         </section>
-        <label class="setting-row"><span>Keep screen awake<small>{{ wakeHeld ? 'Active while this page stays visible.' : 'Optional. Your browser may release this request.' }}</small></span><input type="checkbox" v-model="wakeRequested" @change="requestWake" /></label>
+        <label class="setting-row"><span>Keep screen awake<small>{{ wakeHeld ? 'Active while this page stays visible.' : 'Optional. Your browser may release this request.' }}</small></span><input type="checkbox" v-model="wakeRequested" aria-describedby="display-care-warning" @change="requestWake" /></label>
+        <section class="display-care" aria-labelledby="display-care-title">
+          <h3 id="display-care-title">OLED and display care</h3>
+          <p>After about a minute without input, the world model fills the view and labels disappear. It drifts across the screen, with brief dashboard visits in alternating layouts. The view dims as idle time grows. Quiet or paused views fade to black during world scenes.</p>
+          <p id="display-care-warning"><strong>Burn-in is still possible.</strong> Moving scenes and dimming reduce static exposure but cannot guarantee protection or repair existing burn-in. Keep brightness low and leave your display’s built-in panel care enabled. For long breaks, turn off Keep screen awake and allow display sleep.</p>
+          <p class="display-care-return">Press W or choose World view to start now. Move the pointer, tap, or press any key to restore the dashboard. Use fullscreen to hide browser controls.</p>
+        </section>
         <div class="setting-row"><label for="anomaly-rate">Anomaly frequency<small>Per hour of simulation time</small></label><select id="anomaly-rate" :value="runtime.snapshot.anomalyRate" :disabled="!canMutate" @change="runtime.snapshot.anomalyRate = Number(($event.target as HTMLSelectElement).value); runtime.checkpoint()"><option :value="0">Off</option><option :value="0.35">Rare · 0.35 / hour</option><option :value="2">Occasional · 2 / hour</option><option :value="6">Frequent · 6 / hour</option></select></div>
         <div class="setting-row"><label for="crash-frequency">Simulated universe crashes<small>Full-screen fault, then a fresh universe. Counts active viewing only.</small></label><select id="crash-frequency" :value="runtime.snapshot.crashSchedule?.frequency ?? 'rare'" :disabled="!canMutate" @change="runtime.setCrashFrequency(($event.target as HTMLSelectElement).value)"><option value="off">Off</option><option value="rare">Rare · 45–90 min</option><option value="occasional">Occasional · 10–20 min</option></select></div>
         <section class="storage-settings"><h3>Your universe</h3><p>State stays in this browser on this device. Clearing site data removes it. Export a backup before moving browsers or devices.</p><div class="storage-status"><span class="persistence-dot" :class="{ warning: !persistent }"></span>{{ persistent ? 'Persistent storage granted' : storageChecked ? 'Standard browser storage' : 'Checking storage' }}<button v-if="!persistent" @click="requestPersistence">Request persistence</button></div><div class="button-row"><button @click="exportUniverse">Export universe</button><button @click="exportCollapsed">Export last crashed universe</button><button :disabled="!canMutate" @click="fileInput?.click()">Import universe</button><input ref="fileInput" class="sr-only" type="file" accept=".json,application/json" aria-label="Import universe file" @change="readImport" /></div><button v-if="message" class="text-button" @click="runtime.store.diagnosticExport().then(text => download(text, 'eigenstate-recovery.json')).catch(e => error = String(e))">Export recovery data</button></section>
@@ -340,7 +384,7 @@ onBeforeUnmount(() => {
       <p class="privacy-dismiss">Esc, P, or click outside to return</p>
     </dialog>
 
-    <dialog ref="help" class="confirm-dialog" aria-labelledby="keys-title" @click="backdrop($event, help)"><div class="dialog-heading compact-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button class="close-button" aria-label="Close keyboard shortcuts" @click="help?.close()">×</button></div><dl class="keys-list"><div><dt>T</dt><dd>Next theme</dd></div><div><dt>~</dt><dd>Colophon</dd></div><div><dt>D</dt><dd>Ambient hum on / off</dd></div><div><dt>F</dt><dd>Fullscreen</dd></div><div><dt>Space</dt><dd>Pause / resume simulation</dd></div><div><dt>S</dt><dd>Settings</dd></div><div><dt>P</dt><dd>Privacy and access</dd></div><div><dt>? / H</dt><dd>Keyboard shortcuts</dd></div><div><dt>Esc</dt><dd>Close dialog / exit fullscreen</dd></div></dl><p>Space pauses this view, including when a toolbar button is focused. Use Enter to activate focused buttons. Shortcuts stay inactive in text fields, selectors, and dialogs. F requests browser fullscreen; some embedded browsers do not support it.</p></dialog>
+    <dialog ref="help" class="confirm-dialog" aria-labelledby="keys-title" @click="backdrop($event, help)"><div class="dialog-heading compact-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button class="close-button" aria-label="Close keyboard shortcuts" @click="help?.close()">×</button></div><dl class="keys-list"><div><dt>T</dt><dd>Next theme</dd></div><div><dt>~</dt><dd>Colophon</dd></div><div><dt>D</dt><dd>Ambient hum on / off</dd></div><div><dt>F</dt><dd>Fullscreen</dd></div><div><dt>W</dt><dd>World view / return to dashboard</dd></div><div><dt>Space</dt><dd>Pause / resume simulation</dd></div><div><dt>S</dt><dd>Settings</dd></div><div><dt>P</dt><dd>Privacy and access</dd></div><div><dt>? / H</dt><dd>Keyboard shortcuts</dd></div><div><dt>Esc</dt><dd>Close dialog / exit fullscreen</dd></div></dl><p>Space pauses this view, including when a toolbar button is focused. Use Enter to activate focused buttons. Shortcuts stay inactive in text fields, selectors, and dialogs. F requests browser fullscreen; some embedded browsers do not support it.</p></dialog>
 
     <dialog ref="resetDialog" class="confirm-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset this universe?</h2><p>This permanently replaces your current universe and its history. Your theme stays the same. Export a backup first if you want to keep it.</p><label>Type <strong>RESET</strong> to confirm<input v-model="resetText" autocomplete="off" spellcheck="false" aria-label="Type RESET to confirm" /></label><div class="button-row"><button @click="resetDialog?.close()">Cancel</button><button class="danger-button" :disabled="resetText !== 'RESET' || saving" @click="resetUniverse">{{ saving ? 'Resetting…' : 'Reset universe' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>
     <dialog ref="importDialog" class="confirm-dialog" aria-labelledby="import-title"><h2 id="import-title">Replace your universe?</h2><p>Importing replaces this browser’s current universe with <strong>{{ pendingImport?.universe.id.slice(0, 8).toUpperCase() }}</strong>. Elapsed time will be reconciled. Export your current universe first if you want to keep it.</p><div class="button-row"><button @click="pendingImport = undefined; importDialog?.close()">Cancel</button><button :disabled="saving" @click="confirmImport">{{ saving ? 'Importing…' : 'Replace and import' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>
