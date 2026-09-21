@@ -3,7 +3,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createUniverse } from '../src/core/universe.ts';
 import { telemetryLine, eventLines } from '../src/rendering/terminal.ts';
-import { blendVisual } from '../src/rendering/motion.ts';
+import { blendVisual, PresentationClock } from '../src/rendering/motion.ts';
+
+test('shared presentation clock survives view switches without resetting or advancing twice', () => {
+  const clock = new PresentationClock();
+  assert.equal(clock.sample('world-a', 900, 1000, true), 900);
+  assert.equal(clock.sample('world-a', 999, 1050, true, 2), 900.1);
+  // A newly mounted view supplies simulation age, but keeps the existing camera.
+  assert.equal(clock.sample('world-a', 1200, 1050, true, 2), 900.1);
+  assert.equal(clock.sample('world-a', 1200, 1100, true, 2), 900.2);
+  assert.equal(clock.sample('world-a', 1200, 5000, false), 900.2);
+  assert.equal(clock.sample('world-a', 1200, 6000, false), 900.2);
+  assert.ok(Math.abs(clock.sample('world-a', 1200, 6050, true) - 900.25) < 1e-9);
+  // Hidden tabs cannot turn hours away into a camera jump.
+  assert.ok(clock.sample('world-a', 1200, 9_000_000, true) < 900.36);
+  assert.equal(clock.sample('world-b', 12, 9_000_000, true), 12);
+});
 
 test('terminal samples expose actual subsystem state without mutating the universe', () => {
   const u = createUniverse(7);

@@ -10,12 +10,13 @@ export interface AmbientState {
 export class AmbientDirector {
   private lastActivity: number;
   private worldStarted: number | undefined;
+  private manual = false;
 
   constructor(now = 0) { this.lastActivity = now; }
 
-  reset(now: number): void { this.lastActivity = now; this.worldStarted = undefined; }
+  reset(now: number): void { this.lastActivity = now; this.worldStarted = undefined; this.manual = false; }
 
-  enterWorld(now: number): void { this.lastActivity = now; this.worldStarted = now; }
+  enterWorld(now: number): void { this.lastActivity = now; this.worldStarted = now; this.manual = true; }
 
   update(now: number, options: { blocked?: boolean; worldEvent?: boolean; still?: boolean } = {}): AmbientState {
     if (options.blocked) this.reset(now);
@@ -32,7 +33,7 @@ export class AmbientDirector {
       alternateLayout: elapsed >= 0 && (cycle + (world ? 0 : 1)) % 2 === 1,
       brightness,
       // Still images fade completely instead of leaving a frozen model on screen.
-      worldBrightness: brightness * 0.75 * (options.still ? Math.max(0, 1 - phase / 30) : 1),
+      worldBrightness: brightness * (this.manual && cycle === 0 ? 1 : 0.75) * (options.still ? Math.max(0, 1 - phase / 30) : 1),
     };
   }
 }

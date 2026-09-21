@@ -1,5 +1,17 @@
 # Validation
 
+## World view and display care, September 21, 2026
+
+`npm test` passes all 53 tests. World-view coverage includes manual entry, idle deadlines, alternating layouts, input resets, dimming bounds, and black output for still scenes. Rendering tests verify label removal, bounded detail scaling, experiment highlights, camera orientation, and simulation immutability. Shared-clock tests cover switching views, pause, hidden-time gaps, and new universe identities.
+
+`npm run build` passes TypeScript checks and generates the production bundle and offline shell. JavaScript is about 169 KB before compression and 61 KB gzipped.
+
+Isolated headless Chrome checks exercised W, the toolbar button, pointer and tap return, dialog guards, reduced-motion blackout, and a 390-pixel viewport. A separate check accelerated the simulation to 100× and verified camera continuity when entering and leaving world view. Manual entry starts at full opacity. Desktop and mobile screenshots were inspected; no browser errors were reported. Temporary browser profiles kept existing universes untouched. Clock-driven interaction checks disabled CSS transitions; screenshots were also inspected for visual appearance.
+
+These checks verify rendering and controls, not physical OLED wear. Burn-in prevention is not guaranteed. The settings caution and README describe brightness, panel care, and display sleep.
+
+## Initial validation
+
 Checked locally on macOS on September 19, 2026, using Node.js 26.3.0 and the Codex embedded browser.
 
 ## Automated checks

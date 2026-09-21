@@ -10,15 +10,52 @@ test('manual world entry starts immediately with a fresh scene and normal exit b
   const director = new AmbientDirector();
   director.enterWorld(5_000);
   assert.equal(director.update(5_000).world, true);
-  assert.equal(director.update(5_000).worldBrightness, 0.75);
+  assert.equal(director.update(5_000).worldBrightness, 1);
+  assert.equal(director.update(80_000).worldBrightness, 1);
+  assert.ok(director.update(95_000).worldBrightness < 1);
   assert.equal(director.update(184_999).world, true);
   assert.equal(director.update(185_000).world, false);
+  assert.ok(director.update(230_000).worldBrightness < 0.75);
   director.enterWorld(190_000);
-  assert.equal(director.update(190_000, { still: true }).worldBrightness, 0.75);
+  assert.equal(director.update(190_000, { still: true }).worldBrightness, 1);
   director.reset(195_000);
   assert.equal(director.update(195_000).world, false);
   assert.equal(director.update(269_999).world, false);
   assert.equal(director.update(270_000).world, true);
+});
+
+test('fullscreen keeps camera orientation, scales details within bounds, and retains moving highlights', () => {
+  const universe = createUniverse(42), theme = getTheme('eigenstate');
+  function render(w: number, h: number, ambient: boolean) {
+    const radii: number[] = [], strokes: number[] = [], starts: number[][] = [], labels: string[] = [], highlights: number[][] = [];
+    let halo: number[] = [], width = 0;
+    const ctx = new Proxy({}, {
+      set(_target, key, value) { if (key === 'lineWidth') width = value; return true; },
+      get(_target, key) {
+        if (key === 'arc') return (_x: number, _y: number, radius: number) => radii.push(radius);
+        if (key === 'moveTo') return (...args: number[]) => starts.push(args);
+        if (key === 'stroke') return () => strokes.push(width);
+        if (key === 'fillText') return (value: string) => labels.push(value);
+        if (key === 'ellipse') return (...args: number[]) => highlights.push(args);
+        if (key === 'createRadialGradient') return (...args: number[]) => { halo = args; return { addColorStop() {} }; };
+        return () => {};
+      },
+    }) as CanvasRenderingContext2D;
+    drawWorld(ctx, universe, theme, w, h, 90, ambient);
+    return { radii, strokes, labels, highlights, direction: starts[0].map((coordinate, axis) => (coordinate - halo[axis]) / halo[5]) };
+  }
+  const dashboard = render(500, 300, false), full = render(1440, 1000, true), huge = render(7680, 4320, true);
+  full.direction.forEach((value, axis) => assert.ok(Math.abs(value - dashboard.direction[axis]) < 1e-9));
+  assert.ok(full.radii[0] > dashboard.radii[0]);
+  assert.ok(full.strokes[0] > dashboard.strokes[0]);
+  assert.ok(Math.max(...huge.radii) <= Math.max(...dashboard.radii) * 2.2 + 1e-9);
+  assert.ok(huge.strokes[0] <= dashboard.strokes[0] * 1.7);
+  assert.equal(full.highlights.length, 0);
+  universe.traces.push({ id: 'TRC-000001', age: universe.age, eventSeq: 1, agent: universe.agents[0].id, experiment: universe.experiments[0].id, cause: 'topology', experimentEffect: 'capacity', worldEffect: 'displacement' });
+  const before = structuredClone(universe), highlighted = render(1440, 1000, true);
+  assert.equal(highlighted.highlights.length, 1);
+  assert.equal(highlighted.labels.length, 0);
+  assert.deepEqual(universe, before);
 });
 
 test('idle view has a bounded dashboard dwell and alternates return layouts', () => {

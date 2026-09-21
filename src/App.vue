@@ -13,10 +13,12 @@ import { decodeSnapshot, encodeSnapshot, MAX_BYTES } from './persistence/snapsho
 import { applyTheme, getTheme, themes } from './rendering/themes.ts';
 import { directUniverse } from './rendering/director.ts';
 import { AmbientDirector } from './rendering/ambient.ts';
+import { PresentationClock } from './rendering/motion.ts';
 import { AmbientHum } from './audio/hum.ts';
 
 const runtime = new UniverseRuntime();
 const hum = new AmbientHum();
+const worldClock = new PresentationClock();
 const ambientDirector = new AmbientDirector(performance.now());
 const ambient = ref(ambientDirector.update(performance.now()));
 const systemReduced = ref(false);
@@ -269,7 +271,7 @@ onBeforeUnmount(() => {
         <section class="pane world-pane" :class="{ 'director-focus': director.focus === 'world' }" aria-labelledby="world-title">
           <header class="pane-heading"><h2 id="world-title"><span class="pane-marker">◈</span> World model</h2><span>LATENT STATE PROJECTION</span></header>
           <div class="world-readout"><div><span class="metric-label">Branches evaluated</span><strong>{{ compact(universe.branches.explored) }}</strong></div><div class="world-meta"><span>Confidence <b>{{ universe.branches.confidence.toFixed(6) }}</b></span><span>Divergence <b>{{ universe.branches.divergence.toFixed(6) }}</b></span></div></div>
-          <TelemetryCanvas :suspended="ambient.world" kind="world" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
+          <TelemetryCanvas :suspended="ambient.world" kind="world" :motion-clock="worldClock" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
           <div class="world-trace" aria-label="World model trace"><span class="terminal-prompt">❯</span><span>world.integrate</span><span>epoch={{ universe.epoch }} · vectors={{ universe.world.coordinates.length }} · coupling={{ universe.world.coupling.filter(v => v > 0).length }}/64</span><span class="trace-marker" aria-hidden="true"></span></div>
           <div class="world-bottom"><div><span>Compute allocation</span><div class="allocation-track"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div><div class="allocation-legend"><span>Inference</span><span>Quantum</span><span>Branching</span><span>Reserve</span></div></div><div class="memory-readout"><span>Agent memory</span><strong>{{ universe.resources.memory.toFixed(2) }} <small>GB</small></strong></div></div>
         </section>
@@ -309,7 +311,7 @@ onBeforeUnmount(() => {
     </div>
     <Transition name="ambient-scene">
       <div v-if="ambient.world && !crash" class="ambient-world" aria-label="Idle world view" @click.stop>
-        <TelemetryCanvas kind="world" ambient :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted" :tempo="0.7" :style="{ opacity: ambient.worldBrightness }" label="World model without labels. Move the pointer, tap, or press a key to return to the dashboard." />
+        <TelemetryCanvas kind="world" ambient :motion-clock="worldClock" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted" :tempo="director.tempo" :style="{ opacity: ambient.worldBrightness }" label="World model without labels. Move the pointer, tap, or press a key to return to the dashboard." />
       </div>
     </Transition>
 

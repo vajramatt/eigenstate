@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: MIT
 import type { Universe } from '../core/types.ts';
 
+/** Shared by views of one world so mounting a canvas never resets its camera. */
+export class PresentationClock {
+  private identity = '';
+  private time = 0;
+  private lastSample = 0;
+
+  sample(identity: string, initialTime: number, now: number, moving: boolean, tempo = 1): number {
+    if (identity !== this.identity) {
+      this.identity = identity; this.time = initialTime; this.lastSample = now;
+    }
+    const dt = Math.max(0, Math.min((now - this.lastSample) / 1000, 0.1));
+    this.lastSample = now;
+    if (moving) this.time += dt * tempo;
+    return this.time;
+  }
+}
+
 // Render-only interpolation. Neither the simulation nor its PRNG is advanced here.
 export function blendVisual(current: Universe, target: Universe, amount: number): void {
   const mix = (a: number, b: number) => a + (b - a) * amount;

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://screensaver.crossinginto.ai"><strong>Enter Eigenstate</strong></a> ·
-  <a href="#why-eigenstate">Why Eigenstate?</a> · <a href="#sound">Sound</a> · <a href="#controls">Controls</a> ·
+  <a href="#why-eigenstate">Why Eigenstate?</a> · <a href="#world-view-and-display-care">World view</a> · <a href="#sound">Sound</a> · <a href="#controls">Controls</a> ·
   <a href="#run-locally">Run locally</a> · <a href="#privacy">Privacy</a>
 </p>
 
@@ -55,6 +55,16 @@ flowchart LR
 
 Press **F** for fullscreen, **T** to find your palette, and **D** for sound. Settings offers quiet updates and optional simulated crashes that archive one universe before starting another.
 
+## World view and display care
+
+Press **W** or choose **World view** beside the fullscreen button to expand the world model across the browser viewport. Pane borders, typography, and the corner matrix disappear. The model keeps its rotating geometry, moving signals, and experiment highlights, with slow position and scale changes. Press W again, move the pointer, tap, or press another key to return to the dashboard. Use F to hide browser controls as well.
+
+World view also starts after 60–75 seconds without input. A world reorganization can trigger it after one minute; otherwise it starts at 75 seconds. Each world scene lasts three minutes, followed by a 45-second dashboard visit. Desktop pane arrangements alternate between visits. Input restores your chosen layout, and open dialogs suspend idle mode. These timings use viewing time, independent of simulation speed.
+
+Manual world view starts at normal brightness. After 75 seconds without input, the view gradually dims; automatic idle scenes start dimmer. Quiet updates, reduced motion, and paused views stop camera motion and fade world scenes to black over 30 seconds. Input restores normal brightness.
+
+OLED burn-in is still possible. Moving scenes and dimming reduce static exposure but cannot guarantee protection or repair existing burn-in. Keep brightness low and leave your display's built-in panel care enabled. For long breaks, turn off **Keep screen awake** and allow display sleep. The settings dialog includes this caution beside the wake-lock control. See [Samsung's OLED panel-care guidance](https://www.samsung.com/us/support/troubleshoot/TSG10003240/).
+
 ## Run locally
 
 Use Node.js 24.5 or newer and npm.
@@ -79,6 +89,7 @@ Use HTTPS when hosting. Localhost is also a secure context for IndexedDB, Web Lo
 | Key | Action |
 | --- | --- |
 | `F` | Enter or exit fullscreen |
+| `W` | Start world view immediately, or return to the dashboard |
 | `T` | Cycle themes, with a brief theme-name toast |
 | `~` | Open the colophon |
 | `D` | Toggle the soft ambient hum |
@@ -148,6 +159,8 @@ scripts/build-sw.mjs versioned offline asset cache
 All panes read one `Universe`. Agent dependencies produce graph edges; active and waiting agents determine experiment capacity; experiment convergence guides persisted world coordinates. Each topology change retains a bounded causal record linking agent event, experiment effect, and world-model displacement. The branch fan is a summary of seven experiments, not an explicit tree containing millions of branches. Model specification and trace panels display saved state and execute no code.
 
 The simulation updates once a second while visible. Canvas panes render at up to 30 frames per second, with a slow camera orbit, drifting agent positions, signals along active dependencies, and interpolated quantum and inference values. These presentation effects never advance the simulation or its PRNG. Offscreen panes stop drawing. Quiet mode disables continuous motion and refreshes at most once every five seconds. The page stops its simulation timer when hidden and reconciles elapsed time on return. A service worker caches application assets; it does not run the simulation in the background.
+
+The dashboard and expanded world view use the same renderer and share an animation clock, so switching views preserves camera rotation. Expanded views scale dots, glows, and strokes with model size, within fixed limits. Moving experiment highlights remain visible while labels and other fixed details are omitted. Hidden dashboard canvases stop drawing during world scenes; the universe continues evolving.
 
 The runtime terminal streams one subsystem sample per simulation tick (every five seconds in quiet mode) alongside agent, experiment, and anomaly events. Every fifth incoming sample uses a brief typewriter reveal; event records arrive immediately. Typing stops while paused, hidden, or offscreen and is disabled in quiet mode. Its 80-line scrollback stays in memory. Scroll up to inspect earlier lines; select **Resume following** to return to the live tail. A compact world trace displays the current epoch, vector count, and coupling count. Pause freezes motion and streaming together.
 

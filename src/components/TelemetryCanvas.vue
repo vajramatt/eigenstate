@@ -4,9 +4,9 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Universe } from '../core/types.ts';
 import type { Theme } from '../rendering/themes.ts';
 import { drawPane, REFRESH, type PaneKind } from '../rendering/panes.ts';
-import { blendVisual } from '../rendering/motion.ts';
+import { blendVisual, type PresentationClock } from '../rendering/motion.ts';
 import { drawWorld } from '../rendering/world.ts';
-const props = defineProps<{ kind: PaneKind; universe: Universe; theme: Theme; revision: number; label: string; quiet: boolean; paused: boolean; tempo?: number; ambient?: boolean; suspended?: boolean }>();
+const props = defineProps<{ kind: PaneKind; universe: Universe; theme: Theme; revision: number; label: string; quiet: boolean; paused: boolean; tempo?: number; ambient?: boolean; suspended?: boolean; motionClock?: PresentationClock }>();
 const canvas = ref<HTMLCanvasElement>();
 let observer: ResizeObserver | undefined, visible = true, intersection: IntersectionObserver | undefined;
 let lastDraw = -Infinity, frame = 0, width = 0, height = 0, dpr = 1;
@@ -18,7 +18,9 @@ function draw(force = false) {
   const now = performance.now(), interval = moving() ? 1000 / 30 : props.quiet ? 5000 : REFRESH[props.kind];
   if (!force && now - lastDraw < interval) return;
   const dt = Number.isFinite(lastDraw) ? Math.min((now - lastDraw) / 1000, 0.1) : 0;
-  if (moving()) { clock += dt * (props.tempo ?? 1); blendVisual(visual, props.universe, 1 - Math.exp(-dt * 7)); }
+  if (props.motionClock) clock = props.motionClock.sample(props.universe.id, props.universe.age, now, moving(), props.tempo);
+  else if (moving()) clock += dt * (props.tempo ?? 1);
+  if (moving()) blendVisual(visual, props.universe, 1 - Math.exp(-dt * 7));
   const ctx = el.getContext('2d'); if (!ctx) return;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (props.ambient) {
