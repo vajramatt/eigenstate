@@ -5,8 +5,11 @@ import TelemetryCanvas from './components/TelemetryCanvas.vue';
 import LiveTerminal from './components/LiveTerminal.vue';
 import InferenceReadout from './components/InferenceReadout.vue';
 import CrashScreen from './components/CrashScreen.vue';
+import CausalBeam from './components/CausalBeam.vue';
+import HomecomingCard from './components/HomecomingCard.vue';
 import { UniverseRuntime } from './core/runtime.ts';
 import { shortcutFor } from './core/shortcuts.ts';
+import { glimpse, homecoming, milestoneBetween, universeName, type Glimpse, type Postcard } from './core/homecoming.ts';
 import { compact, formatAge } from './core/simulation.ts';
 import type { Preferences, Snapshot } from './core/types.ts';
 import { decodeSnapshot, encodeSnapshot, MAX_BYTES } from './persistence/snapshot.ts';
@@ -26,7 +29,7 @@ const appVersion = __APP_VERSION__;
 const humOn = ref(false), humVolume = ref(35);
 const binauralOn = ref(false), binauralIntensity = ref(35);
 const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>(), privacy = ref<HTMLDialogElement>();
-const meaning = ref<HTMLDialogElement>();
+const meaning = ref<HTMLDialogElement>(), paneGrid = ref<HTMLElement>();
 const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
 const prefs = ref<Preferences>({ theme: 'eigenstate', layout: 'adaptive', quiet: false });
 const theme = computed(() => getTheme(prefs.value.theme));
@@ -39,6 +42,8 @@ const development = import.meta.env.DEV;
 const debug = ref(development), tab = ref<'experiments' | 'source' | 'trace'>('experiments');
 const selected = ref(''), saving = ref(false), ready = ref(false);
 const experiment = computed(() => universe.value.experiments.find(e => e.id === selected.value) ?? universe.value.experiments[0]);
+const name = computed(() => universeName(universe.value.seed));
+const postcard = shallowRef<Postcard>(), festival = shallowRef<{ label: string; start: number }>();
 const causalTraces = computed(() => [...universe.value.traces].reverse().slice(0, 12));
 const mode = computed(() => { void revision.value; return runtime.mode; });
 const humStatus = computed(() => { void revision.value; return hum.status; });
@@ -57,9 +62,27 @@ const layout = computed(() => {
 let interval: ReturnType<typeof setInterval> | undefined, hideTimer: ReturnType<typeof setTimeout> | undefined, toastTimer: ReturnType<typeof setTimeout> | undefined;
 let wake: WakeLockSentinel | undefined, reduced: MediaQueryList;
 let visibilityQueue = Promise.resolve();
+let seen: Glimpse | undefined, festivalTimer: ReturnType<typeof setTimeout> | undefined;
 
-function refresh() { universe.value = runtime.snapshot.universe; triggerRef(universe); revision.value++; now.value = Date.now(); }
+function refresh() { universe.value = runtime.snapshot.universe; triggerRef(universe); revision.value++; now.value = Date.now(); noticeReturn(); }
+// Compare what the observer last saw with the universe now: after a long absence it says hello,
+// and crossing an age milestone, here or while away, sets the garden into bloom.
+function noticeReturn() {
+  if (!ready.value) return;
+  const u = universe.value, before = runtime.arrival ?? seen;
+  runtime.arrival = undefined; seen = glimpse(u);
+  if (!before || before.id !== u.id) return;
+  const card = homecoming(before, u, new Date().getHours());
+  if (card) postcard.value = card;
+  const milestone = card?.milestone ?? milestoneBetween(before.age, u.age);
+  if (milestone) celebrate(milestone);
+}
+function celebrate(label: string) {
+  festival.value = { label, start: performance.now() };
+  clearTimeout(festivalTimer); festivalTimer = setTimeout(() => festival.value = undefined, 45_000);
+}
 runtime.onChange = refresh;
+watch(() => ready.value && name.value, value => { if (value) document.title = `${value} — Eigenstate`; });
 watch(() => director.value.intensity, value => hum.setActivity(value), { immediate: true });
 watch(() => Boolean(crash.value), active => {
   if (active) { activity(); settings.value?.close(); colophon.value?.close(); help.value?.close(); privacy.value?.close(); meaning.value?.close(); resetDialog.value?.close(); importDialog.value?.close(); }
@@ -234,7 +257,7 @@ onMounted(async () => {
   await nextTick();
 });
 onBeforeUnmount(() => {
-  leave(); clearTimeout(hideTimer); clearTimeout(toastTimer); void wake?.release(); void hum.destroy();
+  leave(); clearTimeout(hideTimer); clearTimeout(toastTimer); clearTimeout(festivalTimer); void wake?.release(); void hum.destroy();
   document.removeEventListener('visibilitychange', visibility); document.removeEventListener('fullscreenchange', fullscreenChanged);
   document.removeEventListener('keydown', keyboard); document.removeEventListener('pointermove', activity); document.removeEventListener('focusin', activity);
   document.removeEventListener('pointerdown', activity); document.removeEventListener('wheel', activity);
@@ -259,19 +282,20 @@ onBeforeUnmount(() => {
     </header>
 
     <main>
-      <div class="status-strip">
-        <div class="live-status"><span class="status-dot" :class="{ paused: paused || mode === 'blocked' }"></span><strong>{{ !ready ? 'INITIALIZING' : paused ? 'PAUSED' : mode === 'follower' ? 'OBSERVING' : mode === 'blocked' ? 'STATE PRESERVED' : 'SYSTEM EVOLVING' }}</strong><span class="subtle">LOCAL / SYNTHETIC</span><span class="director-readout">{{ director.label }}</span></div>
+      <div class="status-strip"><div class="status-identity"><p class="universe-name" :title="`Universe ${universe.id.slice(0, 8).toUpperCase()}`">{{ ready ? name : '' }}</p>
+        <div class="live-status"><span class="status-dot" :class="{ paused: paused || mode === 'blocked' }"></span><strong>{{ !ready ? 'INITIALIZING' : paused ? 'PAUSED' : mode === 'follower' ? 'OBSERVING' : mode === 'blocked' ? 'STATE PRESERVED' : 'SYSTEM EVOLVING' }}</strong><span class="subtle">LOCAL / SYNTHETIC</span><span class="director-readout">{{ director.label }}</span></div></div>
         <dl class="clocks"><div><dt>Universe</dt><dd data-testid="universe-id">{{ universe.id.slice(0, 8).toUpperCase() }}</dd></div><div><dt>Simulation age</dt><dd data-testid="simulation-age">{{ formatAge(universe.age) }}</dd></div><div><dt>Epoch</dt><dd>{{ String(universe.epoch).padStart(5, '0') }}</dd></div><div class="wall-clock"><dt>Wall time</dt><dd>{{ new Date(now).toISOString().slice(11, 19) }} <span>UTC</span></dd></div></dl>
       </div>
 
       <div v-if="message" class="notice" role="status">{{ message }}</div>
       <div v-if="mode === 'follower'" class="notice">Another tab is evolving this universe. Space pauses this view; the other tab keeps running.</div>
 
-      <div class="pane-grid" :aria-busy="!ready">
+      <div ref="paneGrid" class="pane-grid" :aria-busy="!ready">
+        <CausalBeam :universe="universe" :revision="revision" :host="paneGrid" :active="ready && !motionQuiet && !halted && !ambient.world" />
         <section class="pane world-pane" :class="{ 'director-focus': director.focus === 'world' }" aria-labelledby="world-title">
           <header class="pane-heading"><h2 id="world-title"><span class="pane-marker">◈</span> World model</h2><span>LATENT STATE PROJECTION</span></header>
           <div class="world-readout"><div><span class="metric-label">Branches evaluated</span><strong>{{ compact(universe.branches.explored) }}</strong></div><div class="world-meta"><span>Confidence <b>{{ universe.branches.confidence.toFixed(6) }}</b></span><span>Divergence <b>{{ universe.branches.divergence.toFixed(6) }}</b></span></div></div>
-          <TelemetryCanvas :suspended="ambient.world" kind="world" :motion-clock="worldClock" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
+          <TelemetryCanvas :suspended="ambient.world" kind="world" :motion-clock="worldClock" :festival-start="festival?.start" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
           <div class="world-trace" aria-label="World model trace"><span class="terminal-prompt">❯</span><span>world.integrate</span><span>epoch={{ universe.epoch }} · vectors={{ universe.world.coordinates.length }} · coupling={{ universe.world.coupling.filter(v => v > 0).length }}/64</span><span class="trace-marker" aria-hidden="true"></span></div>
           <div class="world-bottom"><div><span>Compute allocation</span><div class="allocation-track"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div><div class="allocation-legend"><span>Inference</span><span>Quantum</span><span>Branching</span><span>Reserve</span></div></div><div class="memory-readout"><span>Agent memory</span><strong>{{ universe.resources.memory.toFixed(2) }} <small>GB</small></strong></div></div>
         </section>
@@ -311,9 +335,11 @@ onBeforeUnmount(() => {
     </div>
     <Transition name="ambient-scene">
       <div v-if="ambient.world && !crash" class="ambient-world" aria-label="Idle world view" @click.stop>
-        <TelemetryCanvas kind="world" ambient :motion-clock="worldClock" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted" :tempo="director.tempo" :style="{ opacity: ambient.worldBrightness }" label="World model without labels. Move the pointer, tap, or press a key to return to the dashboard." />
+        <TelemetryCanvas kind="world" ambient :motion-clock="worldClock" :festival-start="festival?.start" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted" :tempo="director.tempo" :style="{ opacity: ambient.worldBrightness }" label="World model without labels. Move the pointer, tap, or press a key to return to the dashboard." />
       </div>
     </Transition>
+    <Transition name="homecoming"><HomecomingCard v-if="postcard && !crash" :card="postcard" :name="name" @close="postcard = undefined" /></Transition>
+    <Transition name="festival"><p v-if="festival && !crash && !postcard" class="festival-chip" role="status"><span aria-hidden="true">✿</span> {{ name }} is {{ festival.label }}</p></Transition>
 
     <dialog ref="settings" class="settings-dialog" aria-labelledby="settings-title" @close="activity">
       <div class="dialog-heading"><div><span class="dialog-kicker">YOUR OBSERVATORY</span><h2 id="settings-title">Settings</h2></div><button aria-label="Close settings" class="close-button" @click="settings?.close()">×</button></div>

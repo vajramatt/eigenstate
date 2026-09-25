@@ -38,7 +38,7 @@ Click **Why Eigenstate?** beneath the title for the in-app explanation. Close it
 
 | View | What happens |
 | --- | --- |
-| World model | 144 latent vectors orbit within instrument rings; experiment changes light up their associated points. |
+| World model | 144 latent vectors orbit within instrument rings beneath a slow sun. Day sweeps across the near side; the far side keeps its neon night. Experiment changes light up their associated points. |
 | Agent topology | Dependency links carry signals. Confidence rings and causal highlights show which agents changed. |
 | Branch exploration | Seven experiment paths carry packets, weighted by compute allocation. Entropy and confidence retain their history. |
 | Quantum state | Eight synthetic basis phases move around a projection beside their probabilities. |
@@ -52,6 +52,22 @@ flowchart LR
     B --> C[World model reorganizes]
     C --> D[Trace remains]
 ```
+
+### The causal garden
+
+Every retained causal trace grows a tendril from the experiment it changed. A new tendril starts as an amber bud and uncurls over twelve simulated seconds, then settles into living green and blooms. Recent growth leads; older tendrils recede as they approach the 48-trace bound, where they are pruned with their trace. Shapes come from each trace's identity, never from the simulation's random stream, so a universe grows the same garden every time you return.
+
+When a trace is retained on the dashboard, a beam of light follows the chain across the panes: agent node, experiment row, world model. Quiet updates and reduced motion turn the beam off.
+
+The **Solarpunk** palette (night garden · first light) pairs chlorophyll green and patina teal with a sun-amber causal color.
+
+### Names, homecomings, and birthdays
+
+Every universe is named by its seed, such as *The Humming Commons of Soft Machines*. The name appears above the status line and in the browser tab, and never changes for that universe.
+
+Return after twenty minutes or more and the universe leaves a short note: how long it kept going, what grew in the garden, which experiments found answers, and any milestone it passed. The note leaves on its own. It is written from counts already kept in the universe; nothing new is stored or sent.
+
+When a universe turns one hour, one day, one week, thirty days, one hundred days, or a year old, whether you are watching or away, the garden blooms at once: every tendril flowers, pollen rises, and a small label marks the occasion for about forty-five seconds.
 
 Press **F** for fullscreen, **T** to find your palette, and **D** for sound. Settings offers quiet updates and optional simulated crashes that archive one universe before starting another.
 

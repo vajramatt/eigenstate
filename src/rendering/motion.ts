@@ -36,5 +36,6 @@ export function blendVisual(current: Universe, target: Universe, amount: number)
   current.agents = target.agents; current.experiments = target.experiments;
   current.branches = target.branches; current.history = target.history; current.events = target.events;
   current.resources = target.resources; current.world.coupling = target.world.coupling;
-  current.age = target.age; current.traces = target.traces;
+  // Fractional age lets causal tendrils grow smoothly between one-second simulation steps.
+  current.age = target.age - current.age > 30 || target.age < current.age ? target.age : mix(current.age, target.age); current.traces = target.traces;
 }

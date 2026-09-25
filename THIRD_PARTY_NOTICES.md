@@ -17,7 +17,7 @@ These themes adapt palette colors for Eigenstate's interface and Canvas renderer
 | Nord | [nordtheme/nord](https://github.com/nordtheme/nord) | [MIT](docs/licenses/nord.txt), 2016-present Sven Greb |
 | Catppuccin Mocha | [catppuccin/catppuccin](https://github.com/catppuccin/catppuccin) | [MIT](docs/licenses/cat.txt), 2021 Catppuccin |
 
-The default Eigenstate palette, procedural graphics, icon, and synthesized hum are original work. The colophon and theme shortcut conventions follow Stillpoint.guru, another project by Matthew Williamson. No Stillpoint source code or audio assets are included.
+The default Eigenstate and Solarpunk palettes, procedural graphics, icon, and synthesized hum are original work. The colophon and theme shortcut conventions follow Stillpoint.guru, another project by Matthew Williamson. No Stillpoint source code or audio assets are included.
 
 ## Development tools
 

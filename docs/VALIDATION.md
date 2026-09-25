@@ -73,3 +73,15 @@ Verified Space pauses and resumes when a toolbar button has focus. Keyboard repe
 ## Simulated crash update
 
 Nine additional tests cover seeded intervals, schedule validation, bounded archives, fresh identity after reboot, safe visual previews, pause and hidden-time behavior, follower takeover, archive failure, and restoring a crashed universe. These tests use isolated IndexedDB databases. The browser preview displayed the fault screen and countdown, then returned to universe C8744716 without changing its identity. No browser warnings or errors were reported during this check.
+
+## Causal garden update (0.5.0)
+
+Five tests cover tendril growth timing, identity-derived tendril shape rooted in the changed experiment, a full 48-trace garden in ambient view (no labels, one halo rectangle, bounded radii, read-only universe), quantum pane zones at dashboard and phone sizes, and daylight colors for every theme. The ambient orientation test now captures the first radial gradient as the halo, since the sun corona adds a second.
+
+Checked in a local Chromium preview at 1512×900 and 390×844 with the Solarpunk and Eigenstate themes. The causal beam was observed leaving the source agent node. World view framed the full model with 48 tendrils. The quantum and branch panes had no overlapping labels, and the phone layout had no horizontal overflow. Frame timing with a full garden was not measured on low-power hardware.
+
+## Homecoming update (0.6.0)
+
+Four tests cover seed-stable names with broad variety, milestone detection (including repeat and multi-year crossings), the homecoming threshold, counts, greeting by local hour and read-only behavior, and the festival envelope with a label-free, read-only bloom render.
+
+In a local Chromium preview, the saved snapshot was backdated in that browser's own storage by four and then twenty-five days. Reloading reconciled the gap, showed the note with correct counts and the "one week old" and "thirty days old" milestones, and the festival label followed after dismissal. The narrow quantum pane was rechecked after moving its depth readout. Real multi-day absence on a sleeping machine was not tested.

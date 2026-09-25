@@ -5,8 +5,8 @@ import type { Universe } from '../core/types.ts';
 import type { Theme } from '../rendering/themes.ts';
 import { drawPane, REFRESH, type PaneKind } from '../rendering/panes.ts';
 import { blendVisual, type PresentationClock } from '../rendering/motion.ts';
-import { drawWorld } from '../rendering/world.ts';
-const props = defineProps<{ kind: PaneKind; universe: Universe; theme: Theme; revision: number; label: string; quiet: boolean; paused: boolean; tempo?: number; ambient?: boolean; suspended?: boolean; motionClock?: PresentationClock }>();
+import { drawWorld, festivalEnvelope } from '../rendering/world.ts';
+const props = defineProps<{ kind: PaneKind; universe: Universe; theme: Theme; revision: number; label: string; quiet: boolean; paused: boolean; tempo?: number; ambient?: boolean; suspended?: boolean; motionClock?: PresentationClock; festivalStart?: number }>();
 const canvas = ref<HTMLCanvasElement>();
 let observer: ResizeObserver | undefined, visible = true, intersection: IntersectionObserver | undefined;
 let lastDraw = -Infinity, frame = 0, width = 0, height = 0, dpr = 1;
@@ -22,11 +22,12 @@ function draw(force = false) {
   else if (moving()) clock += dt * (props.tempo ?? 1);
   if (moving()) blendVisual(visual, props.universe, 1 - Math.exp(-dt * 7));
   const ctx = el.getContext('2d'); if (!ctx) return;
+  const celebration = props.festivalStart === undefined ? 0 : festivalEnvelope(now - props.festivalStart);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (props.ambient) {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
-    drawWorld(ctx, moving() ? visual : props.universe, props.theme, width, height, clock, true);
-  } else drawPane(props.kind, ctx, moving() ? visual : props.universe, props.theme, width, height, clock);
+    drawWorld(ctx, moving() ? visual : props.universe, props.theme, width, height, clock, true, celebration);
+  } else drawPane(props.kind, ctx, moving() ? visual : props.universe, props.theme, width, height, clock, celebration);
   lastDraw = now;
 }
 function loop() { frame = 0; draw(); if (moving()) frame = requestAnimationFrame(loop); }
@@ -40,6 +41,7 @@ function resize() {
 }
 watch(() => props.revision, () => { if (!moving()) draw(); });
 watch(() => props.theme.id, () => draw(true));
+watch(() => props.festivalStart, () => sync());
 watch(() => props.universe.id, () => { visual = structuredClone(props.universe); clock = props.universe.age; sync(); });
 watch(() => [props.quiet, props.paused, props.tempo, props.suspended, props.ambient], () => { visual = structuredClone(props.universe); sync(); });
 onMounted(() => {

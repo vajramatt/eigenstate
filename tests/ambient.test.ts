@@ -37,7 +37,7 @@ test('fullscreen keeps camera orientation, scales details within bounds, and ret
         if (key === 'stroke') return () => strokes.push(width);
         if (key === 'fillText') return (value: string) => labels.push(value);
         if (key === 'ellipse') return (...args: number[]) => highlights.push(args);
-        if (key === 'createRadialGradient') return (...args: number[]) => { halo = args; return { addColorStop() {} }; };
+        if (key === 'createRadialGradient') return (...args: number[]) => { if (!halo.length) halo = args; return { addColorStop() {} }; };
         return () => {};
       },
     }) as CanvasRenderingContext2D;

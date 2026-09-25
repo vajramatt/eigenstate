@@ -5,6 +5,7 @@ import { createUniverse } from './universe.ts';
 import { freshSeed } from './random.ts';
 import { advance, reconcile } from './simulation.ts';
 import { triggerAnomaly } from './anomalies.ts';
+import { glimpse, type Glimpse } from './homecoming.ts';
 import { SnapshotStore } from '../persistence/store.ts';
 import { FutureVersionError } from '../persistence/snapshot.ts';
 
@@ -18,6 +19,8 @@ export class UniverseRuntime {
   lastSave = 0;
   stepMs = 0;
   crash: CrashSequence | null = null;
+  /** The saved universe as last seen, captured before elapsed time is reconciled. */
+  arrival: Glimpse | undefined;
   onChange: () => void = () => {};
   private lastTick = 0;
   private lastPoll = 0;
@@ -55,7 +58,7 @@ export class UniverseRuntime {
           }
           this.snapshot.crashSchedule ??= crashSchedule(this.snapshot.universe.seed);
           if (this.paused || this.crash || (this.snapshot.crashSchedule.frequency !== 'off' && this.snapshot.crashSchedule.remaining === 0)) this.snapshot.savedAt = Math.max(this.snapshot.savedAt, Date.now());
-          else reconcile(this.snapshot);
+          else { this.arrival = glimpse(this.snapshot.universe); reconcile(this.snapshot); }
           this.mode = 'writer'; this.message = this.store.notice;
           await this.checkpoint();
         } catch (error) {

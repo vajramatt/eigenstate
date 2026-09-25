@@ -8,6 +8,16 @@ import { drawWorld } from './world.ts';
 export type PaneKind = 'world' | 'agents' | 'branches' | 'quantum' | 'inference' | 'resources';
 export const REFRESH: Record<PaneKind, number> = { world: 2400, agents: 3900, branches: 3100, quantum: 1800, inference: 1300, resources: 4700 };
 
+/** Node positions in the topology pane; shared with the causal beam so it leaves from the real agent. */
+export function agentPoints(u: Universe, w: number, h: number, time = u.age): { id: string; x: number; y: number }[] {
+  const graphWidth = w * 0.72, middle = graphWidth * 0.51;
+  return u.agents.map((a, i) => {
+    const id = parseInt(a.id.slice(4), 16) || i;
+    const angle = id * 2.399963 + Math.sin(time * 0.13 + id) * 0.08;
+    const ring = 0.61 + (id % 3) * 0.13 + Math.sin(time * 0.19 + id) * 0.025;
+    return { id: a.id, x: middle + Math.cos(angle) * graphWidth * 0.38 * ring, y: h * 0.49 + Math.sin(angle) * h * 0.35 * ring };
+  });
+}
 function drawAgents(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
   grid(ctx, w, h, t, 28);
   const graphWidth = w * 0.72, middle = graphWidth * 0.51;
@@ -17,12 +27,7 @@ function drawAgents(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time 
     ctx.beginPath(); ctx.strokeStyle = t.line; ctx.lineWidth = 0.5;
     ctx.ellipse(middle, h * 0.49, graphWidth * radius, h * radius, 0, 0, Math.PI * 2); ctx.stroke();
   }
-  const points = u.agents.map((a, i) => {
-    const id = parseInt(a.id.slice(4), 16) || i;
-    const angle = id * 2.399963 + Math.sin(time * 0.13 + id) * 0.08;
-    const ring = 0.61 + (id % 3) * 0.13 + Math.sin(time * 0.19 + id) * 0.025;
-    return { id: a.id, x: middle + Math.cos(angle) * graphWidth * 0.38 * ring, y: h * 0.49 + Math.sin(angle) * h * 0.35 * ring };
-  });
+  const points = agentPoints(u, w, h, time);
   u.agents.forEach((a, i) => {
     a.dependencies.forEach(id => {
       const other = points.find(p => p.id === id); if (!other) return;
@@ -62,8 +67,8 @@ function drawBranches(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, tim
   const trace = u.traces.at(-1), traceAge = trace ? u.age - trace.age : Infinity;
   // A summary fan per experiment, not a fabricated explicit branch tree.
   u.experiments.forEach((e, i) => {
-    const x = w * 0.44, y = 15 + i / Math.max(1, u.experiments.length - 1) * (totalHeight - 30);
-    const end = w - 22, endY = y + (e.convergence - 0.5) * 12;
+    const y = 15 + i / Math.max(1, u.experiments.length - 1) * (totalHeight - 30);
+    const end = w - 44, endY = y + (e.convergence - 0.5) * 12;
     const affected = traceAge < 10 && trace?.experiment === e.id, color = affected ? t.warning : t.accent;
     const point = (p: number): [number, number] => {
       const smooth = p * p * (3 - 2 * p);
@@ -80,11 +85,11 @@ function drawBranches(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, tim
     const packet = (time * 0.16 + i * 0.137) % 1;
     dot(ctx, ...point(packet), color, 2);
     if (affected) {
-      const flare = traceAge % 2;
+      const flare = Math.max(0, traceAge) % 2;
       ctx.beginPath(); ctx.strokeStyle = `${t.warning}${Math.round((1 - flare / 2) * 190).toString(16).padStart(2, '0')}`;
       ctx.lineWidth = 1; ctx.arc(end, endY, 3 + flare * 5, 0, Math.PI * 2); ctx.stroke();
     }
-    text(ctx, e.id.slice(4), x + 8, y - 9, t.faint, 8);
+    text(ctx, e.id.slice(4), end + 11, y, affected ? t.warning : t.faint, 8);
   });
   const y = totalHeight + 10;
   line(ctx, 12, y, w - 12, y, t.line);
@@ -92,8 +97,14 @@ function drawBranches(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, tim
   plot(ctx, history.map(p => p.confidence), 12, y + 10, w - 24, h - y - 26, t.accent);
   text(ctx, 'entropy / confidence', 12, h - 9, t.muted, 8);
 }
+/** Separate zones: register sphere on the left; readout, caption, and probability chart on the right. */
+export function quantumLayout(w: number, h: number) {
+  const r = Math.max(10, Math.min(w * 0.16, (h - 44) / 2)), cx = Math.max(w * 0.22, r + 16), cy = h / 2 + 4;
+  const left = Math.max(w * 0.44, cx + r + 18), bottom = h - 24, caption = Math.min(58, h * 0.38), top = caption + 10;
+  return { cx, cy, r, left, bottom, caption, top, chartHeight: Math.max(12, bottom - top) };
+}
 function drawQuantum(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): void {
-  const q = u.quantum, cx = w * 0.3, cy = h * 0.31, r = Math.min(w * 0.2, h * 0.25);
+  const q = u.quantum, { cx, cy, r, left, bottom, caption, chartHeight } = quantumLayout(w, h);
   for (const ratio of [1, 0.37]) {
     ctx.beginPath(); ctx.strokeStyle = t.line; ctx.lineWidth = 0.8; ctx.ellipse(cx, cy, r, r * ratio, 0, 0, Math.PI * 2); ctx.stroke();
   }
@@ -110,19 +121,20 @@ function drawQuantum(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): voi
   const x = cx + Math.cos(phase) * r * Math.sqrt(q.probabilities[q.collapsed]), y = cy - Math.sin(phase) * r;
   line(ctx, cx, cy, x, y, t.accent, 1.3); dot(ctx, x, y, t.accent, 3);
   text(ctx, '|0⟩', cx, cy - r - 8, t.muted, 9, 'center');
-  text(ctx, 'ENTANGLEMENT', w * 0.58, cy - 16, t.faint, 8); text(ctx, q.entanglement.toFixed(4), w * 0.58, cy + 5, t.accent, 18);
-  text(ctx, `depth ${q.depth}`, w * 0.58, cy + 28, t.muted, 9);
-  const bottom = h - 24, chartHeight = h * 0.32, bw = (w - 32) / 8;
+  text(ctx, 'ENTANGLEMENT', left, 14, t.faint, 8); text(ctx, q.entanglement.toFixed(4), left, 34, t.accent, 18);
+  text(ctx, `depth ${q.depth}`, w - 16, 14, t.muted, 8, 'right');
+  const bw = (w - 16 - left) / 8;
   q.probabilities.forEach((p, i) => {
-    const height = p * chartHeight, left = 16 + i * bw + 2;
-    ctx.fillStyle = t.line; ctx.fillRect(left, bottom - chartHeight, bw - 7, chartHeight);
+    const height = p * chartHeight, x = left + i * bw, barW = Math.max(2, bw - 5);
+    ctx.fillStyle = t.line; ctx.fillRect(x, bottom - chartHeight, barW, chartHeight);
     ctx.fillStyle = i === q.collapsed ? `${t.warning}80` : `${t.secondary}80`;
-    ctx.fillRect(left, bottom - height, bw - 7, height);
-    line(ctx, left, bottom - height, left + bw - 7, bottom - height, i === q.collapsed ? t.warning : t.accent, 1.5);
-    text(ctx, i.toString(2).padStart(3, '0'), 16 + i * bw + bw / 2, bottom + 13, t.faint, 8, 'center');
+    ctx.fillRect(x, bottom - height, barW, height);
+    line(ctx, x, bottom - height, x + barW, bottom - height, i === q.collapsed ? t.warning : t.accent, 1.5);
+    // Narrow charts label alternate states so the basis labels never run together.
+    if (bw >= 22 || i % 2 === 0) text(ctx, i.toString(2).padStart(3, '0'), x + barW / 2, bottom + 13, t.faint, 8, 'center');
   });
-  line(ctx, 16, bottom + 1, w - 16, bottom + 1, t.line);
-  text(ctx, 'BASIS PROBABILITY / 0–1', 16, bottom - chartHeight - 10, t.faint, 7);
+  text(ctx, 'BASIS PROBABILITY / 0–1', left, caption, t.faint, 8);
+  line(ctx, left, bottom + 1, w - 16, bottom + 1, t.line);
 }
 function drawInference(ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
   const n = u.inference, cols = 12, cellW = (w - 32) / cols, cellH = Math.min(13, h * 0.045);
@@ -154,8 +166,9 @@ function drawResources(ctx: Ctx, u: Universe, t: Theme, w: number, h: number): v
     ctx.fillStyle = t.line; ctx.fillRect(12, y + 14, w - 24, 4); ctx.fillStyle = colors[i]; ctx.fillRect(12, y + 14, (w - 24) * v, 4);
   });
 }
-export function drawPane(kind: PaneKind, ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age): void {
+export function drawPane(kind: PaneKind, ctx: Ctx, u: Universe, t: Theme, w: number, h: number, time = u.age, celebration = 0): void {
   ctx.clearRect(0, 0, w, h); ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
-  ({ world: drawWorld, agents: drawAgents, branches: drawBranches, quantum: drawQuantum, inference: drawInference, resources: drawResources }[kind])(ctx, u, t, w, h, time);
+  if (kind === 'world') drawWorld(ctx, u, t, w, h, time, false, celebration);
+  else ({ world: drawWorld, agents: drawAgents, branches: drawBranches, quantum: drawQuantum, inference: drawInference, resources: drawResources }[kind])(ctx, u, t, w, h, time);
   ctx.restore();
 }
