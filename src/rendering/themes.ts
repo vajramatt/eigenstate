@@ -13,6 +13,7 @@ export const themes: Theme[] = [
   { id: 'synthwave84', name: "Synthwave '84", description: 'Deep violet · hot pink', background: '#241b2f', panel: '#2a2038', raised: '#342546', text: '#f4e8fc', muted: '#c3a6d2', faint: '#9476a5', accent: '#ff7edb', secondary: '#36f9f6', third: '#fede5d', line: '#4a345c', warning: '#fede5d', sun: '#fede5d', leaf: '#72f1b8' },
   { id: 'nord', name: 'Nord', description: 'Polar night · arctic blue', background: '#242a35', panel: '#2e3440', raised: '#3b4252', text: '#eceff4', muted: '#bbc5d5', faint: '#78869a', accent: '#88c0d0', secondary: '#81a1c1', third: '#a3be8c', line: '#434c5e', warning: '#ebcb8b', sun: '#f3dca6', leaf: '#a3be8c' },
   { id: 'catppuccin', name: 'Catppuccin Mocha', description: 'Soft charcoal · mauve', background: '#181825', panel: '#1e1e2e', raised: '#313244', text: '#cdd6f4', muted: '#bac2de', faint: '#7f849c', accent: '#cba6f7', secondary: '#89dceb', third: '#a6e3a1', line: '#45475a', warning: '#f9e2af', sun: '#f9e2af', leaf: '#a6e3a1' },
+  { id: 'dusk', name: 'Dusk', description: 'Crossing Into · first sun', background: '#0d1520', panel: '#111b28', raised: '#172334', text: '#f1efe6', muted: '#a9b3bf', faint: '#6c7888', accent: '#f2a649', secondary: '#63c7af', third: '#a79cf0', line: '#223044', warning: '#f08a7e', sun: '#ffe7c2', leaf: '#7fd3bd' },
 ];
 export function getTheme(id: string): Theme { return themes.find(t => t.id === id) ?? themes[0]; }
 export function applyTheme(theme: Theme): void {

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Crossing Into family styling (Luminous Commons, Dusk): Fraunces, Hanken Grotesk, and JetBrains Mono bundled for offline use; lifted panes, glass dialogs, and sun amber as the brand signature across themes.
+- Animated Bloch-sphere mark (superposition → measurement → eigenstate) in the header, colophon, and a labelled version in "Why Eigenstate?"; SVG geometry is tested and holds still when paused or quiet.
+- Pane-heading instrument glyphs that animate only for the director's focused pane.
+- New Dusk theme and matching favicon.
+- OpenGraph card redrawn in the family style; its words are outlined from the bundled fonts (`scripts/og-text.py`) so the card renders identically on every machine.
+
 ## 0.1.0 — 2026-09-19
 
 - Persistent seeded simulation with bounded agents, experiments, branches, quantum telemetry, inference activity, and latent world state.

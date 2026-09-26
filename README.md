@@ -59,6 +59,8 @@ Every retained causal trace grows a tendril from the experiment it changed. A ne
 
 When a trace is retained on the dashboard, a beam of light follows the chain across the panes: agent node, experiment row, world model. Quiet updates and reduced motion turn the beam off.
 
+The interface shares the Crossing Into family look: Fraunces, Hanken Grotesk, and JetBrains Mono (bundled locally), softly lifted panes, and sun amber as the brand signature in every theme. The mark is an animated Bloch sphere: its state vector precesses in superposition, is measured onto |0⟩, rests there as an eigenstate, and is released. Each pane heading has a small instrument glyph that moves only while the presentation director is focused on that pane. The mark and glyphs hold still when the universe is paused or motion is quiet.
+
 The **Solarpunk** palette (night garden · first light) pairs chlorophyll green and patina teal with a sun-amber causal color.
 
 ### Names, homecomings, and birthdays
@@ -139,7 +141,7 @@ Use stereo headphones with mono audio disabled to preserve the separate signals.
 
 ## Themes
 
-Eigenstate, Tokyo Night, Synthwave '84, Nord, and Catppuccin Mocha are available through the theme menu or `T`. Text, graphs, matrices, controls, and browser chrome use a shared palette registry. Themes change color without changing simulation state. No theme adds scanlines, CRT distortion, or phosphor glow.
+Eigenstate, Solarpunk, Tokyo Night, Synthwave '84, Nord, Dusk, and Catppuccin Mocha are available through the theme menu or `T`. **Dusk** follows the Luminous Commons system of [crossinginto.ai](https://crossinginto.ai). Text, graphs, matrices, controls, and browser chrome use a shared palette registry. Themes change color without changing simulation state. No theme adds scanlines, CRT distortion, or phosphor glow.
 
 Add a theme to `src/rendering/themes.ts`. Keep text readable against both panel and background colors, and include attribution for any adapted palette in `THIRD_PARTY_NOTICES.md`.
 
