@@ -31,7 +31,7 @@ const appVersion = __APP_VERSION__;
 const humOn = ref(false), humVolume = ref(35);
 const binauralOn = ref(false), binauralIntensity = ref(35);
 const colophon = ref<HTMLDialogElement>(), help = ref<HTMLDialogElement>(), privacy = ref<HTMLDialogElement>();
-const meaning = ref<HTMLDialogElement>(), paneGrid = ref<HTMLElement>();
+const meaning = ref<HTMLDialogElement>(), deck = ref<HTMLElement>(), instruments = ref(false);
 const revision = ref(0), universe = shallowRef(runtime.snapshot.universe), now = ref(Date.now());
 const prefs = ref<Preferences>({ theme: 'eigenstate', layout: 'adaptive', quiet: false });
 const theme = computed(() => getTheme(prefs.value.theme));
@@ -47,6 +47,24 @@ const experiment = computed(() => universe.value.experiments.find(e => e.id === 
 const name = computed(() => universeName(universe.value.seed));
 const postcard = shallowRef<Postcard>(), festival = shallowRef<{ label: string; start: number }>();
 const causalTraces = computed(() => [...universe.value.traces].reverse().slice(0, 12));
+// The HUD keeps four vitals; everything else lives behind the Instruments drawer.
+const vitals = computed(() => {
+  void revision.value;
+  const u = universe.value, active = u.agents.filter(a => a.status === 'active').length;
+  const convergence = u.experiments.reduce((sum, e) => sum + e.convergence, 0) / Math.max(1, u.experiments.length);
+  return [
+    { label: 'Agents', value: String(u.agents.length), unit: `${active} active`, level: active / Math.max(1, u.agents.length) },
+    { label: 'Entanglement', value: u.quantum.entanglement.toFixed(4), unit: `${u.quantum.registers} reg`, level: u.quantum.entanglement },
+    { label: 'Throughput', value: compact(u.inference.throughput), unit: 'tok/s', level: u.inference.load },
+    { label: 'Convergence', value: convergence.toFixed(3), unit: `${u.experiments.length} exp`, level: convergence },
+  ];
+});
+const signal = computed(() => {
+  void revision.value;
+  const anomaly = latestAnomaly.value, event = universe.value.events.at(-1);
+  if (anomaly) return { key: `a${anomaly.seq}`, anomaly: true, text: anomaly.message };
+  return event ? { key: `e${event.seq}`, anomaly: false, text: `${event.subject} · ${event.message}` } : undefined;
+});
 const mode = computed(() => { void revision.value; return runtime.mode; });
 const humStatus = computed(() => { void revision.value; return hum.status; });
 const paused = computed(() => { void revision.value; return runtime.paused; });
@@ -130,7 +148,7 @@ async function openPrivacy() {
 function updateAmbient() {
   const dialogOpen = [settings, meaning, colophon, help, privacy, resetDialog, importDialog].some(dialog => dialog.value?.open);
   ambient.value = ambientDirector.update(performance.now(), {
-    blocked: !ready.value || document.hidden || Boolean(crash.value) || dialogOpen,
+    blocked: !ready.value || document.hidden || Boolean(crash.value) || dialogOpen || instruments.value,
     worldEvent: director.value.phase === 'trace' && director.value.focus === 'world',
     still: motionQuiet.value || halted.value,
   });
@@ -139,8 +157,10 @@ function activity() {
   ambientDirector.reset(performance.now());
   ambient.value = ambientDirector.update(performance.now());
   idle.value = false; clearTimeout(hideTimer);
-  if (full.value && !settings.value?.open && !meaning.value?.open) hideTimer = setTimeout(() => idle.value = true, 4000);
+  // Chrome recedes whenever input stops, so the universe holds the screen.
+  if (!instruments.value && !settings.value?.open && !meaning.value?.open) hideTimer = setTimeout(() => idle.value = true, full.value ? 4000 : 6000);
 }
+function toggleInstruments(open = !instruments.value) { instruments.value = open; activity(); updateAmbient(); }
 function enterWorld() {
   if (!ready.value || crash.value) return;
   activity();
@@ -225,6 +245,7 @@ function keyboard(e: KeyboardEvent) {
     return;
   }
   if (settings.value?.open || resetDialog.value?.open || importDialog.value?.open) return;
+  if (e.key === 'Escape' && instruments.value) { toggleInstruments(false); return; }
   const action = shortcutFor(e.key, e.code, target.tagName, target.isContentEditable, e.metaKey || e.ctrlKey || e.altKey);
   if (!action) return;
   e.preventDefault(); // Space always pauses the observatory, including from toolbar buttons.
@@ -239,6 +260,7 @@ function keyboard(e: KeyboardEvent) {
     case 'help': help.value?.showModal(); break;
     case 'settings': openSettings(); break;
     case 'privacy': void openPrivacy(); break;
+    case 'instruments': toggleInstruments(); break;
   }
 }
 function reducedChanged() { systemReduced.value = reduced.matches; if (reduced.matches) { prefs.value.quiet = true; void savePrefs(); } }
@@ -274,43 +296,72 @@ onBeforeUnmount(() => {
   <div class="observatory" @close.capture="activity" :class="[{ immersive: full, idle, 'ambient-active': ambient.world, 'ambient-restored': ambient.brightness === 1 }, `layout-${layout}`, `director-${director.phase}`, { 'motion-still': motionQuiet || halted }]">
     <CrashScreen v-if="crash" :crash="crash" :universe="universe" />
     <div class="dashboard" :inert="ambient.world" :style="{ opacity: ambient.world ? 0 : ambient.brightness }">
-    <header class="topbar">
-      <div class="brand"><EigenMark :animated="lively" /><div><h1>Eigenstate<span class="version">/ {{ appVersion }}</span></h1><p>A browser screensaver · for entertainment only</p><button class="name-link" aria-haspopup="dialog" aria-controls="meaning-dialog" @click="openMeaning">Why Eigenstate? <span aria-hidden="true">↗</span></button></div></div>
-      <nav class="controls" aria-label="Observatory controls">
-        <a class="back-link" href="https://crossinginto.ai/tools">Crossing Into <span aria-hidden="true">↗</span></a>
-        <button class="shortcut-theme" title="Next theme (T)" aria-label="Next theme" @click="nextTheme">t</button><label class="theme-picker"><span class="theme-dot" aria-hidden="true"></span><span class="sr-only">Color theme</span><select aria-label="Color theme" :value="prefs.theme" @change="changeTheme"><option v-for="t in themes" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
-        <button class="icon-button" title="Settings (S)" aria-label="Settings" @click="openSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg></button>
-        <button class="fullscreen-button world-view-button" title="World view (W)" aria-label="World view" :disabled="!ready" @click="enterWorld"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><ellipse cx="12" cy="12" rx="3.5" ry="8"/><path d="M4 12h16"/></svg><span>World view</span><kbd>W</kbd></button>
-        <button class="fullscreen-button" @click="fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/></svg><span>{{ full ? 'Exit fullscreen' : 'Enter fullscreen' }}</span><kbd>F</kbd></button>
-      </nav>
-    </header>
+    <div ref="deck" class="deck">
+      <section class="hero world-pane" :class="{ 'director-focus': director.focus === 'world' }" aria-labelledby="world-title">
+        <h2 id="world-title" class="sr-only">World model</h2>
+        <TelemetryCanvas :suspended="ambient.world" kind="world" hero :motion-clock="worldClock" :festival-start="festival?.start" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors orbiting beneath a slow sun" />
+        <div class="hero-reticle" aria-hidden="true"><i></i><i></i></div>
+      </section>
+      <div class="hud-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
-    <main>
-      <div class="status-strip"><div class="status-identity"><p class="universe-name" :title="`Universe ${universe.id.slice(0, 8).toUpperCase()}`">{{ ready ? name : '' }}</p>
-        <div class="live-status"><span class="status-dot" :class="{ paused: paused || mode === 'blocked' }"></span><strong>{{ !ready ? 'INITIALIZING' : paused ? 'PAUSED' : mode === 'follower' ? 'OBSERVING' : mode === 'blocked' ? 'STATE PRESERVED' : 'SYSTEM EVOLVING' }}</strong><span class="subtle">LOCAL / SYNTHETIC</span><span class="director-readout">{{ director.label }}</span></div></div>
-        <dl class="clocks"><div><dt>Universe</dt><dd data-testid="universe-id">{{ universe.id.slice(0, 8).toUpperCase() }}</dd></div><div><dt>Simulation age</dt><dd data-testid="simulation-age">{{ formatAge(universe.age) }}</dd></div><div><dt>Epoch</dt><dd>{{ String(universe.epoch).padStart(5, '0') }}</dd></div><div class="wall-clock"><dt>Wall time</dt><dd>{{ new Date(now).toISOString().slice(11, 19) }} <span>UTC</span></dd></div></dl>
+      <header class="hud hud-identity">
+        <button class="hud-mark" title="Colophon (~)" aria-label="Colophon" @click="openColophon"><EigenMark :animated="lively" /></button>
+        <div>
+          <h1>Eigenstate <span class="version">{{ appVersion }}</span></h1>
+          <p class="universe-name" :title="`Universe ${universe.id.slice(0, 8).toUpperCase()}`">{{ ready ? name : '' }}</p>
+          <p class="hud-disclaimer">Synthetic universe · entertainment only · <button class="name-link" aria-haspopup="dialog" aria-controls="meaning-dialog" @click="openMeaning">Why Eigenstate?</button></p>
+        </div>
+      </header>
+
+      <dl class="hud hud-clocks">
+        <div><dt>Age</dt><dd data-testid="simulation-age">{{ formatAge(universe.age) }}</dd></div>
+        <div><dt>Epoch</dt><dd>{{ String(universe.epoch).padStart(5, '0') }}</dd></div>
+        <div><dt>UTC</dt><dd>{{ new Date(now).toISOString().slice(11, 19) }}</dd></div>
+        <div class="hud-id"><dt>Universe</dt><dd data-testid="universe-id"><span class="persistence-dot" :class="{ warning: mode !== 'writer' }" :title="mode === 'writer' ? 'Saved in this browser' : mode === 'follower' ? 'Following active tab' : mode === 'memory' ? 'Session only · export to keep' : mode === 'blocked' ? 'Saved state preserved' : 'Connecting to local state'"></span>{{ universe.id.slice(0, 8).toUpperCase() }}</dd></div>
+      </dl>
+
+      <section class="hud hud-primary" aria-label="Universe status">
+        <div class="live-status"><span class="status-dot" :class="{ paused: paused || mode === 'blocked' }"></span><strong>{{ !ready ? 'INITIALIZING' : paused ? 'PAUSED' : mode === 'follower' ? 'OBSERVING' : mode === 'blocked' ? 'STATE PRESERVED' : 'EVOLVING' }}</strong><span class="director-readout">{{ director.label }}</span></div>
+        <span class="hud-eyebrow">Branches evaluated</span>
+        <strong class="hud-figure">{{ compact(universe.branches.explored) }}</strong>
+        <div class="allocation-track" title="Compute allocation: inference, quantum, branching, reserve"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div>
+        <p class="hud-sub"><span>conf <b>{{ universe.branches.confidence.toFixed(4) }}</b></span><span>div <b>{{ universe.branches.divergence.toFixed(4) }}</b></span><span>H <b>{{ universe.branches.entropy.toFixed(4) }}</b></span></p>
+      </section>
+
+      <ul class="hud hud-vitals" aria-label="Vital signs">
+        <li v-for="v in vitals" :key="v.label"><span class="hud-eyebrow">{{ v.label }}</span><strong>{{ v.value }}</strong><small>{{ v.unit }}</small><i :style="{ '--level': Math.min(1, Math.max(0, v.level)) }"></i></li>
+      </ul>
+
+      <div class="hud-notices">
+        <div v-if="message" class="notice" role="status">{{ message }}</div>
+        <div v-if="mode === 'follower'" class="notice">Another tab is evolving this universe. Space pauses this view; the other tab keeps running.</div>
       </div>
 
-      <div v-if="message" class="notice" role="status">{{ message }}</div>
-      <div v-if="mode === 'follower'" class="notice">Another tab is evolving this universe. Space pauses this view; the other tab keeps running.</div>
+      <Transition name="signal" mode="out-in"><p v-if="signal" :key="signal.key" class="hud-signal" :class="{ anomaly: signal.anomaly }" aria-live="off"><span aria-hidden="true">{{ signal.anomaly ? '◇' : '›' }}</span>{{ signal.text }}</p></Transition>
 
-      <div ref="paneGrid" class="pane-grid" :aria-busy="!ready">
-        <CausalBeam :universe="universe" :revision="revision" :host="paneGrid" :active="ready && !motionQuiet && !halted && !ambient.world" />
-        <section class="pane world-pane" :class="{ 'director-focus': director.focus === 'world' }" aria-labelledby="world-title">
-          <header class="pane-heading"><h2 id="world-title"><PaneGlyph kind="world" :active="lively && director.focus === 'world'" />World model</h2><span>LATENT STATE PROJECTION</span></header>
-          <div class="world-readout"><div><span class="metric-label">Branches evaluated</span><strong>{{ compact(universe.branches.explored) }}</strong></div><div class="world-meta"><span>Confidence <b>{{ universe.branches.confidence.toFixed(6) }}</b></span><span>Divergence <b>{{ universe.branches.divergence.toFixed(6) }}</b></span></div></div>
-          <TelemetryCanvas :suspended="ambient.world" kind="world" :motion-clock="worldClock" :festival-start="festival?.start" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Three-dimensional projection of 144 evolving latent world vectors, with experiment links and a sparse coupling matrix" />
-          <div class="world-trace" aria-label="World model trace"><span class="terminal-prompt">❯</span><span>world.integrate</span><span>epoch={{ universe.epoch }} · vectors={{ universe.world.coordinates.length }} · coupling={{ universe.world.coupling.filter(v => v > 0).length }}/64</span><span class="trace-marker" aria-hidden="true"></span></div>
-          <div class="world-bottom"><div><span>Compute allocation</span><div class="allocation-track"><i v-for="(v, i) in universe.resources.allocations" :key="i" :style="{ width: `${v * 100}%`, background: [theme.accent, theme.secondary, theme.third, theme.faint][i] }"></i></div><div class="allocation-legend"><span>Inference</span><span>Quantum</span><span>Branching</span><span>Reserve</span></div></div><div class="memory-readout"><span>Agent memory</span><strong>{{ universe.resources.memory.toFixed(2) }} <small>GB</small></strong></div></div>
-        </section>
+      <nav class="dock" aria-label="Observatory controls">
+        <button :class="{ on: instruments }" :aria-pressed="instruments" title="Instruments (I)" @click="toggleInstruments()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h13"/></svg><span>Instruments</span><kbd>I</kbd></button>
+        <button title="Pure world view (W)" :disabled="!ready" @click="enterWorld"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><ellipse cx="12" cy="12" rx="3.5" ry="8"/><path d="M4 12h16"/></svg><span>World</span><kbd>W</kbd></button>
+        <span class="dock-rule" aria-hidden="true"></span>
+        <button class="dock-icon" :title="`Theme: ${theme.name} (T)`" aria-label="Next theme" @click="nextTheme"><span class="theme-dot" aria-hidden="true"></span></button>
+        <button class="dock-icon" :class="{ on: humOn }" :aria-pressed="humOn" :title="humOn ? `Hum ${humStatus} (D)` : 'Ambient hum (D)'" aria-label="Ambient hum" @click="toggleHum"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2l2-5 3 10 3-14 3 12 2-3h3"/></svg></button>
+        <button class="dock-icon" :title="paused ? 'Resume (Space)' : 'Pause (Space)'" :aria-label="paused ? 'Resume' : 'Pause'" :disabled="!canPause" @click="setPaused"><svg viewBox="0 0 24 24" aria-hidden="true"><path v-if="paused" d="M8 5l11 7-11 7z"/><path v-else d="M9 5v14M15 5v14"/></svg></button>
+        <button class="dock-icon" title="Settings (S)" aria-label="Settings" @click="openSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg></button>
+        <button class="dock-icon" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" @click="help?.showModal()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="11" rx="2"/><path d="M7 11h1M11 11h2M16 11h1M8 14.5h8"/></svg></button>
+        <span class="dock-rule" aria-hidden="true"></span>
+        <button class="dock-primary" @click="fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/></svg><span>{{ full ? 'Exit' : 'Fullscreen' }}</span><kbd>F</kbd></button>
+      </nav>
 
-        <section class="pane agent-pane" :class="{ 'director-focus': director.focus === 'agents' }" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title"><PaneGlyph kind="agents" :active="lively && director.focus === 'agents'" />Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas :suspended="ambient.world" kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
+      <aside class="instruments" :class="{ open: instruments }" :inert="!instruments" aria-label="Instruments" :aria-busy="!ready">
+        <header class="instruments-head"><div><span class="dialog-kicker">Deep telemetry</span><h2>Instruments</h2></div><button class="close-button" aria-label="Close instruments" @click="toggleInstruments(false)">×</button></header>
+        <div class="instruments-body">
+        <section class="pane agent-pane" :class="{ 'director-focus': director.focus === 'agents' }" aria-labelledby="agent-title"><header class="pane-heading"><h2 id="agent-title"><PaneGlyph kind="agents" :active="lively && director.focus === 'agents'" />Agent topology</h2><span>SHARED STATE</span></header><TelemetryCanvas :suspended="ambient.world || !instruments" kind="agents" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" :label="`${universe.agents.length} live agents and their dependencies`" /></section>
 
-        <section class="pane quantum-pane" :class="{ 'director-focus': director.focus === 'quantum' }" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title"><PaneGlyph kind="quantum" :active="lively && director.focus === 'quantum'" />Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas :suspended="ambient.world" kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
+        <section class="pane quantum-pane" :class="{ 'director-focus': director.focus === 'quantum' }" aria-labelledby="quantum-title"><header class="pane-heading"><h2 id="quantum-title"><PaneGlyph kind="quantum" :active="lively && director.focus === 'quantum'" />Quantum state</h2><span>{{ universe.quantum.registers }} REGISTERS</span></header><TelemetryCanvas :suspended="ambient.world || !instruments" kind="quantum" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Synthetic register projection and normalized probabilities across eight measurement states" /><footer class="pane-foot"><span>Decoherence</span><b>{{ universe.quantum.decoherence.toFixed(5) }}</b></footer></section>
 
-        <section class="pane inference-pane" :class="{ 'director-focus': director.focus === 'inference' }" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title"><PaneGlyph kind="inference" :active="lively && director.focus === 'inference'" />Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas :suspended="ambient.world" kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><InferenceReadout :throughput="universe.inference.throughput" :tokens="universe.inference.tokens" :intensity="director.intensity" :quiet="motionQuiet" :paused="halted || mode === 'blocked'" /></footer></section>
+        <section class="pane inference-pane" :class="{ 'director-focus': director.focus === 'inference' }" aria-labelledby="inference-title"><header class="pane-heading"><h2 id="inference-title"><PaneGlyph kind="inference" :active="lively && director.focus === 'inference'" />Inference</h2><span>48 LAYERS</span></header><TelemetryCanvas :suspended="ambient.world || !instruments" kind="inference" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Layer activations, context utilization, load, and ensemble agreement" /><footer class="pane-foot"><InferenceReadout :throughput="universe.inference.throughput" :tokens="universe.inference.tokens" :intensity="director.intensity" :quiet="motionQuiet" :paused="halted || mode === 'blocked'" /></footer></section>
 
-        <section class="pane branch-pane" :class="{ 'director-focus': director.focus === 'branches' }" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title"><PaneGlyph kind="branches" :active="lively && director.focus === 'branches'" />Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas :suspended="ambient.world" kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Experiment branch summaries with entropy and confidence history" /></section>
+        <section class="pane branch-pane" :class="{ 'director-focus': director.focus === 'branches' }" aria-labelledby="branch-title"><header class="pane-heading"><h2 id="branch-title"><PaneGlyph kind="branches" :active="lively && director.focus === 'branches'" />Branch exploration</h2><span>Σ</span></header><div class="branch-metrics"><div><strong>{{ compact(universe.branches.active) }}</strong><span>active</span></div><div><strong>{{ compact(universe.branches.pruned) }}</strong><span>pruned</span></div></div><TelemetryCanvas :suspended="ambient.world || !instruments" kind="branches" :universe="universe" :theme="theme" :revision="revision" :quiet="motionQuiet" :paused="halted || mode !== 'writer' && mode !== 'memory'" :tempo="director.tempo" label="Experiment branch summaries with entropy and confidence history" /></section>
 
         <section class="pane experiment-pane" :class="{ 'director-focus': director.focus === 'experiment' }" aria-labelledby="experiment-title"><header class="pane-heading"><h2 id="experiment-title"><PaneGlyph kind="experiment" :active="lively && director.focus === 'experiment'" />Experiment registry</h2><span>{{ universe.experiments.length }} RUNNING SLOTS</span></header>
           <div class="pane-tabs" role="tablist" aria-label="Experiment view"><button role="tab" :aria-selected="tab === 'experiments'" aria-controls="experiment-table" @click="tab = 'experiments'">Experiments</button><button role="tab" :aria-selected="tab === 'source'" aria-controls="model-source" @click="tab = 'source'">Model specification</button><button role="tab" :aria-selected="tab === 'trace'" aria-controls="causal-trace" @click="tab = 'trace'">Trace <span>{{ universe.traces.length }}</span></button></div>
@@ -329,10 +380,11 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="pane event-pane" :class="{ 'director-focus': director.focus === 'terminal' }" aria-labelledby="event-title"><header class="pane-heading"><h2 id="event-title"><PaneGlyph kind="terminal" :active="lively && director.focus === 'terminal'" />Runtime terminal</h2><span>LIVE / STDOUT</span></header><div v-if="latestAnomaly" class="anomaly-banner">◇ {{ latestAnomaly.message }}</div><LiveTerminal :universe="universe" :revision="revision" :quiet="motionQuiet" :paused="halted || mode === 'blocked'" :ready="ready" /></section>
-      </div>
-    </main>
-
-    <footer class="app-footer"><div><button class="colophon-link" @click="openColophon" title="Colophon (~)"><span class="small-mark" aria-hidden="true"><EigenMark /></span> colophon <kbd>~</kbd></button><button @click="openPrivacy" title="Privacy and access (P)">Privacy &amp; access <kbd>P</kbd></button><span class="synthetic-note">Screensaver · entertainment only · simulated data.</span></div><div><span class="persistence-dot" :class="{ warning: mode !== 'writer' }"></span><span>{{ mode === 'writer' ? 'Saved in this browser' : mode === 'follower' ? 'Following active tab' : mode === 'memory' ? 'Session only · export to keep' : mode === 'blocked' ? 'Saved state preserved' : 'Connecting to local state' }}</span><button @click="toggleHum" :aria-pressed="humOn" title="Ambient hum (D)">{{ humOn ? `Hum ${humStatus}` : 'Hum off' }} <kbd>D</kbd></button><button @click="help?.showModal()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button @click="setPaused" :disabled="!canPause">{{ paused ? 'Resume' : 'Pause' }} <kbd>Space</kbd></button></div></footer>
+        </div>
+        <footer class="instruments-foot"><button @click="openPrivacy">Privacy &amp; access <kbd>P</kbd></button><a href="https://crossinginto.ai/tools">Crossing Into ↗</a><span>All agents, logs, and metrics are simulated.</span></footer>
+      </aside>
+      <CausalBeam :universe="universe" :revision="revision" :host="deck" :active="ready && instruments && !motionQuiet && !halted && !ambient.world" />
+    </div>
 
     <div v-if="toast" class="toast" role="status">{{ toast }}</div>
 
@@ -349,7 +401,7 @@ onBeforeUnmount(() => {
       <div class="dialog-heading"><div><span class="dialog-kicker">YOUR OBSERVATORY</span><h2 id="settings-title">Settings</h2></div><button aria-label="Close settings" class="close-button" @click="settings?.close()">×</button></div>
       <div class="settings-body">
         <fieldset class="theme-options"><legend>Color theme</legend><button v-for="t in themes" :key="t.id" class="theme-option" :class="{ chosen: prefs.theme === t.id }" :aria-pressed="prefs.theme === t.id" @click="prefs.theme = t.id; savePrefs()"><span class="swatches"><i v-for="c in [t.background, t.accent, t.secondary]" :key="c" :style="{ background: c }"></i></span><span><strong>{{ t.name }}</strong><small>{{ t.description }}</small></span><span v-if="prefs.theme === t.id" class="selected-check">✓</span></button></fieldset>
-        <div class="setting-row"><label for="layout">Pane layout</label><select id="layout" v-model="prefs.layout" @change="savePrefs"><option value="adaptive">Universe seed</option><option value="observatory">Observatory</option><option value="analysis">Analysis</option></select></div>
+        <div class="setting-row"><label for="layout">HUD arrangement<small>Mirroring shifts static readouts between scenes.</small></label><select id="layout" v-model="prefs.layout" @change="savePrefs"><option value="adaptive">Universe seed</option><option value="observatory">Standard</option><option value="analysis">Mirrored</option></select></div>
         <label class="setting-row"><span>Quiet updates<small>Refresh visualizations less often. Respects reduced motion.</small></span><input type="checkbox" v-model="prefs.quiet" @change="savePrefs" /></label>
         <label class="setting-row"><span>Ambient hum<small>Soft, locally generated sound. Off when you arrive. {{ humOn ? `Audio: ${humStatus}.` : '' }}</small></span><input type="checkbox" :checked="humOn" @change="toggleHum" /></label><label v-if="humOn" class="setting-row"><span>Hum volume <small>{{ humVolume }}%</small></span><input aria-label="Hum volume" type="range" min="0" max="100" v-model.number="humVolume" @input="hum.setVolume(humVolume / 100)" /></label>
         <section class="binaural-settings" aria-labelledby="binaural-title">
@@ -416,7 +468,7 @@ onBeforeUnmount(() => {
       <p class="privacy-dismiss">Esc, P, or click outside to return</p>
     </dialog>
 
-    <dialog ref="help" class="confirm-dialog" aria-labelledby="keys-title" @click="backdrop($event, help)"><div class="dialog-heading compact-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button class="close-button" aria-label="Close keyboard shortcuts" @click="help?.close()">×</button></div><dl class="keys-list"><div><dt>T</dt><dd>Next theme</dd></div><div><dt>~</dt><dd>Colophon</dd></div><div><dt>D</dt><dd>Ambient hum on / off</dd></div><div><dt>F</dt><dd>Fullscreen</dd></div><div><dt>W</dt><dd>World view / return to dashboard</dd></div><div><dt>Space</dt><dd>Pause / resume simulation</dd></div><div><dt>S</dt><dd>Settings</dd></div><div><dt>P</dt><dd>Privacy and access</dd></div><div><dt>? / H</dt><dd>Keyboard shortcuts</dd></div><div><dt>Esc</dt><dd>Close dialog / exit fullscreen</dd></div></dl><p>Space pauses this view, including when a toolbar button is focused. Use Enter to activate focused buttons. Shortcuts stay inactive in text fields, selectors, and dialogs. F requests browser fullscreen; some embedded browsers do not support it.</p></dialog>
+    <dialog ref="help" class="confirm-dialog" aria-labelledby="keys-title" @click="backdrop($event, help)"><div class="dialog-heading compact-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button class="close-button" aria-label="Close keyboard shortcuts" @click="help?.close()">×</button></div><dl class="keys-list"><div><dt>T</dt><dd>Next theme</dd></div><div><dt>~</dt><dd>Colophon</dd></div><div><dt>D</dt><dd>Ambient hum on / off</dd></div><div><dt>F</dt><dd>Fullscreen</dd></div><div><dt>W</dt><dd>Pure world view / return</dd></div><div><dt>I</dt><dd>Instruments drawer</dd></div><div><dt>Space</dt><dd>Pause / resume simulation</dd></div><div><dt>S</dt><dd>Settings</dd></div><div><dt>P</dt><dd>Privacy and access</dd></div><div><dt>? / H</dt><dd>Keyboard shortcuts</dd></div><div><dt>Esc</dt><dd>Close dialog / exit fullscreen</dd></div></dl><p>Space pauses this view, including when a toolbar button is focused. Use Enter to activate focused buttons. Shortcuts stay inactive in text fields, selectors, and dialogs. F requests browser fullscreen; some embedded browsers do not support it.</p></dialog>
 
     <dialog ref="resetDialog" class="confirm-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset this universe?</h2><p>This permanently replaces your current universe and its history. Your theme stays the same. Export a backup first if you want to keep it.</p><label>Type <strong>RESET</strong> to confirm<input v-model="resetText" autocomplete="off" spellcheck="false" aria-label="Type RESET to confirm" /></label><div class="button-row"><button @click="resetDialog?.close()">Cancel</button><button class="danger-button" :disabled="resetText !== 'RESET' || saving" @click="resetUniverse">{{ saving ? 'Resetting…' : 'Reset universe' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>
     <dialog ref="importDialog" class="confirm-dialog" aria-labelledby="import-title"><h2 id="import-title">Replace your universe?</h2><p>Importing replaces this browser’s current universe with <strong>{{ pendingImport?.universe.id.slice(0, 8).toUpperCase() }}</strong>. Elapsed time will be reconciled. Export your current universe first if you want to keep it.</p><div class="button-row"><button @click="pendingImport = undefined; importDialog?.close()">Cancel</button><button :disabled="saving" @click="confirmImport">{{ saving ? 'Importing…' : 'Replace and import' }}</button></div><p v-if="error" role="alert" class="error">{{ error }}</p></dialog>

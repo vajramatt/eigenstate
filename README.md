@@ -108,6 +108,7 @@ Use HTTPS when hosting. Localhost is also a secure context for IndexedDB, Web Lo
 | --- | --- |
 | `F` | Enter or exit fullscreen |
 | `W` | Start world view immediately, or return to the dashboard |
+| `I` | Open or close the Instruments drawer (all detailed panes) |
 | `T` | Cycle themes, with a brief theme-name toast |
 | `~` | Open the colophon |
 | `D` | Toggle the soft ambient hum |

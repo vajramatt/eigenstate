@@ -7,6 +7,7 @@ test('Space pauses from toolbar buttons, links, or the page', () => {
   assert.equal(shortcutFor('F', 'KeyF', 'BUTTON', false, false), 'fullscreen');
   assert.equal(shortcutFor('p', 'KeyP', 'BODY', false, false), 'privacy');
   assert.equal(shortcutFor('W', 'KeyW', 'BODY', false, false), 'world');
+  assert.equal(shortcutFor('i', 'KeyI', 'BODY', false, false), 'instruments');
 });
 test('shortcuts preserve typing and browser modifier combinations', () => {
   for (const tag of ['INPUT', 'SELECT', 'TEXTAREA']) assert.equal(shortcutFor(' ', 'Space', tag, false, false), null);

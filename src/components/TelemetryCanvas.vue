@@ -6,7 +6,7 @@ import type { Theme } from '../rendering/themes.ts';
 import { drawPane, REFRESH, type PaneKind } from '../rendering/panes.ts';
 import { blendVisual, type PresentationClock } from '../rendering/motion.ts';
 import { drawWorld, festivalEnvelope } from '../rendering/world.ts';
-const props = defineProps<{ kind: PaneKind; universe: Universe; theme: Theme; revision: number; label: string; quiet: boolean; paused: boolean; tempo?: number; ambient?: boolean; suspended?: boolean; motionClock?: PresentationClock; festivalStart?: number }>();
+const props = defineProps<{ kind: PaneKind; universe: Universe; theme: Theme; revision: number; label: string; quiet: boolean; paused: boolean; tempo?: number; ambient?: boolean; hero?: boolean; suspended?: boolean; motionClock?: PresentationClock; festivalStart?: number }>();
 const canvas = ref<HTMLCanvasElement>();
 let observer: ResizeObserver | undefined, visible = true, intersection: IntersectionObserver | undefined;
 let lastDraw = -Infinity, frame = 0, width = 0, height = 0, dpr = 1;
@@ -24,7 +24,11 @@ function draw(force = false) {
   const ctx = el.getContext('2d'); if (!ctx) return;
   const celebration = props.festivalStart === undefined ? 0 : festivalEnvelope(now - props.festivalStart);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if (props.ambient) {
+  if (props.hero) {
+    // Full-bleed backdrop: label-free drift over the page's own sky.
+    ctx.clearRect(0, 0, width, height);
+    drawWorld(ctx, moving() ? visual : props.universe, props.theme, width, height, clock, true, celebration);
+  } else if (props.ambient) {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
     drawWorld(ctx, moving() ? visual : props.universe, props.theme, width, height, clock, true, celebration);
   } else drawPane(props.kind, ctx, moving() ? visual : props.universe, props.theme, width, height, clock, celebration);

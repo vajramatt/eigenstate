@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Orbital HUD (0.7.0): the world model fills the screen; identity, clocks, one headline figure, and four vitals sit in hairline corners. A one-line event signal yields to a floating control dock on input, and chrome recedes after six idle seconds.
+- Instruments drawer (`I`) holds every detailed pane; the causal beam runs from drawer to world while it is open.
+- HUD arrangement setting (Standard / Mirrored) replaces pane layout and swaps corners between scenes for display care.
+- Milestone label rises above the dock lane instead of covering it.
 - Crossing Into family styling (Luminous Commons, Dusk): Fraunces, Hanken Grotesk, and JetBrains Mono bundled for offline use; lifted panes, glass dialogs, and sun amber as the brand signature across themes.
 - Animated Bloch-sphere mark (superposition → measurement → eigenstate) in the header, colophon, and a labelled version in "Why Eigenstate?"; SVG geometry is tested and holds still when paused or quiet.
 - Pane-heading instrument glyphs that animate only for the director's focused pane.
